@@ -1088,7 +1088,7 @@
         <div class="card-header"><h3>💰 원가 절감 실적 현황</h3><button class="btn btn-primary btn-sm" onclick="openCostModal()">+ 과제 등록</button></div>
         <div class="kpi-grid">
             <div class="kpi-box" style="position:relative;">
-                <div class="kpi-label">🎯 연간 목표 (만원)</div>
+                <div class="kpi-label">🎯 연간 목표 (억원)</div>
                 <div id="kpi-cost-goal-display" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:6px 0 2px;">
                     <div class="kpi-val" id="kpi-cost-goal">-</div>
                     <button onclick="openCostGoalEdit()" title="목표 수정" style="background:none;border:none;cursor:pointer;color:var(--sub);font-size:0.9rem;padding:2px;">✏️</button>
@@ -1104,12 +1104,12 @@
                     </div>
                 </div>
             </div>
-            <div class="kpi-box"><div class="kpi-label">📈 현재 실적 (만원)</div><div class="kpi-val" id="kpi-cost-done" style="color:var(--accent2);">-</div></div>
+            <div class="kpi-box"><div class="kpi-label">📈 현재 실적 (억원)</div><div class="kpi-val" id="kpi-cost-done" style="color:var(--accent2);">-</div></div>
             <div class="kpi-box"><div class="kpi-label">🏆 달성률</div><div class="kpi-val" id="kpi-cost-pct">-</div><div class="kpi-sub" id="kpi-cost-pct-sub"></div></div>
             <div class="kpi-box"><div class="kpi-label">📋 진행 과제 수</div><div class="kpi-val" id="kpi-cost-cnt">-</div></div>
         </div>
         <div class="card-body"><table class="data-table">
-            <thead><tr><th>과제명</th><th>담당부서</th><th>목표금액(만원)</th><th>실적금액(만원)</th><th>달성률</th><th>완료예정일</th><th>상태</th><th></th></tr></thead>
+            <thead><tr><th>과제명</th><th>담당부서</th><th>목표금액(억원)</th><th>실적금액(억원)</th><th>달성률</th><th>완료예정일</th><th>상태</th><th></th></tr></thead>
             <tbody id="tbody-cost"><tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr></tbody>
         </table></div>
     </div>
@@ -2417,7 +2417,10 @@ function removeTest(dev,idx) {
 }
 function removeRow(arr, idx, saveKey, renderFn) {
     if (!confirm('삭제하시겠습니까?')) return;
-    arr.splice(idx,1); localStorage.setItem(saveKey, JSON.stringify(arr)); renderFn();
+    arr.splice(idx,1);
+    localStorage.setItem(saveKey, JSON.stringify(arr));
+    if (window._fbSet) window._fbSet(saveKey, arr);
+    renderFn();
 }
 
 // ═══════════════════════════════════════════
@@ -3874,7 +3877,10 @@ function open4mDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        data4m.splice(idx,1); localStorage.setItem('korens_4m',JSON.stringify(data4m)); render4m(); closeModal('cq-detail-modal');
+        data4m.splice(idx,1);
+        localStorage.setItem('korens_4m',JSON.stringify(data4m));
+        if (window._fbSet) window._fbSet('korens_4m', data4m);
+        render4m(); closeModal('cq-detail-modal');
     };
     _detailType='4m'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -3884,7 +3890,9 @@ function save4mDetail() {
     const g=id=>{ const el=document.getElementById('de-'+id); return el?el.value:''; };
     r.type=g('type'); r.dept=g('dept'); r.content=g('content');
     r.date=g('date'); r.approve=g('approve'); r.impact=g('impact'); r.note=g('note');
-    localStorage.setItem('korens_4m',JSON.stringify(data4m)); render4m(); closeModal('cq-detail-modal');
+    localStorage.setItem('korens_4m',JSON.stringify(data4m));
+    if (window._fbSet) window._fbSet('korens_4m', data4m);
+    render4m(); closeModal('cq-detail-modal');
 }
 
 // ── 원가 절감 상세/수정
@@ -3902,7 +3910,10 @@ function openCostDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        costData.splice(idx,1); localStorage.setItem('korens_cost',JSON.stringify(costData)); renderCost(); closeModal('cq-detail-modal');
+        costData.splice(idx,1);
+        localStorage.setItem('korens_cost',JSON.stringify(costData));
+        if (window._fbSet) window._fbSet('korens_cost', costData);
+        renderCost(); closeModal('cq-detail-modal');
     };
     _detailType='cost'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -3912,7 +3923,9 @@ function saveCostDetail() {
     const g=id=>{ const el=document.getElementById('de-'+id); return el?el.value:''; };
     r.name=g('name'); r.dept=g('dept'); r.status=g('status');
     r.goal=parseFloat(g('goal'))||0; r.done=parseFloat(g('done'))||0; r.date=g('date');
-    localStorage.setItem('korens_cost',JSON.stringify(costData)); renderCost(); closeModal('cq-detail-modal');
+    localStorage.setItem('korens_cost',JSON.stringify(costData));
+    if (window._fbSet) window._fbSet('korens_cost', costData);
+    renderCost(); closeModal('cq-detail-modal');
 }
 
 // ── AI 실험실 상세/수정
@@ -3931,7 +3944,10 @@ function openAilabDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        ailabData.splice(idx,1); localStorage.setItem('korens_ailab',JSON.stringify(ailabData)); renderAilab(); closeModal('cq-detail-modal');
+        ailabData.splice(idx,1);
+        localStorage.setItem('korens_ailab',JSON.stringify(ailabData));
+        if (window._fbSet) window._fbSet('korens_ailab', ailabData);
+        renderAilab(); closeModal('cq-detail-modal');
     };
     _detailType='ailab'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -3941,7 +3957,9 @@ function saveAilabDetail() {
     const g=id=>{ const el=document.getElementById('de-'+id); return el?el.value:''; };
     r.name=g('name'); r.owner=g('owner'); r.status=g('status');
     r.pct=parseInt(g('pct'))||0; r.start=g('start'); r.end=g('end'); r.note=g('note');
-    localStorage.setItem('korens_ailab',JSON.stringify(ailabData)); renderAilab(); closeModal('cq-detail-modal');
+    localStorage.setItem('korens_ailab',JSON.stringify(ailabData));
+    if (window._fbSet) window._fbSet('korens_ailab', ailabData);
+    renderAilab(); closeModal('cq-detail-modal');
 }
 
 // ── 통합 저장 라우터
@@ -4597,13 +4615,14 @@ function saveCostAnnualGoal() {
 }
 
 function renderCost() {
+    const toOk = v => (v/100000000).toFixed(2) + '억';
     let doneTotal=0, rows='';
     costData.forEach((r,i)=>{
         doneTotal+=r.done;
         const pct=r.goal>0?Math.round(r.done/r.goal*100)+'%':'-';
         const sc=r.status==='완료'?'tag-good':r.status==='보류'?'tag-bad':'tag-warn';
         rows+=`<tr style="cursor:pointer;" onclick="openCostDetail(${i})">
-            <td>${r.name}</td><td>${r.dept}</td><td>${r.goal.toLocaleString()}</td><td>${r.done.toLocaleString()}</td><td>
+            <td>${r.name}</td><td>${r.dept}</td><td>${toOk(r.goal)}</td><td>${toOk(r.done)}</td><td>
             <div class="progress-wrap"><div class="progress-bar progress-running" style="width:${Math.min(r.goal>0?r.done/r.goal*100:0,100)}%"></div></div>
             <div class="queue-pct">${pct}</div></td><td>${fmtDate(r.date)}</td><td><span class="status-tag ${sc}">${r.status}</span></td>
             <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px;">
@@ -4612,11 +4631,10 @@ function renderCost() {
             </div></td></tr>`;
     });
     document.getElementById('tbody-cost').innerHTML=rows||'<tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr>';
-    // 연간 목표: 별도 저장값 우선, 없으면 과제 합산
     const goalToShow = costAnnualGoal > 0 ? costAnnualGoal : costData.reduce((s,r)=>s+r.goal,0);
     const pctVal = goalToShow > 0 ? Math.round(doneTotal / goalToShow * 100) : 0;
-    document.getElementById('kpi-cost-goal').textContent = goalToShow.toLocaleString();
-    document.getElementById('kpi-cost-done').textContent = doneTotal.toLocaleString();
+    document.getElementById('kpi-cost-goal').textContent = toOk(goalToShow);
+    document.getElementById('kpi-cost-done').textContent = toOk(doneTotal);
     document.getElementById('kpi-cost-pct').textContent = goalToShow > 0 ? pctVal + '%' : '-';
     const sub = document.getElementById('kpi-cost-pct-sub');
     if (sub) sub.textContent = goalToShow > 0 ? (pctVal >= 100 ? '✅ 목표 달성!' : pctVal >= 70 ? '📈 순항 중' : '⚠️ 목표 미달') : '';
@@ -6117,11 +6135,14 @@ initYearSel(); initHistorySel();
 
     // ── 원가 절감 ──
     costData = [
-        { name:'소재 변경을 통한 중량 절감',    dept:'개발팀', goal:8000,  done:8000,  date:'2026-02-28', status:'완료' },
-        { name:'공정 자동화 설비 도입',          dept:'생산팀', goal:15000, done:9500,  date:'2026-06-30', status:'진행중' },
-        { name:'협력사 단가 재협상',             dept:'구매팀', goal:5000,  done:5000,  date:'2026-01-31', status:'완료' },
-        { name:'불량률 감소 원가 절감 효과',     dept:'품질팀', goal:6000,  done:3200,  date:'2026-12-31', status:'진행중' },
-        { name:'에너지 사용량 최적화',           dept:'시설팀', goal:2500,  done:0,     date:'2026-09-30', status:'보류' }
+        { name:'HMC/KMC 필드클레임 변제 금액',              dept:'품질팀', goal:48000000,   done:0,        date:'2026-12-31', status:'진행중' },
+        { name:'고객사 클레임 비용 협력사 상계처리',          dept:'품질팀', goal:130000000,  done:0,        date:'2026-12-31', status:'진행중' },
+        { name:'고객사 필드클레임 이의신청, 변제',            dept:'품질팀', goal:160000000,  done:0,        date:'2026-12-31', status:'진행중' },
+        { name:'해외법인(DV,PV), 고객, 협력사 유상 시험 비용', dept:'시험파트', goal:40000000, done:34512773, date:'2026-12-31', status:'진행중' },
+        { name:'26년 정기검사 Item 공급처 중복, A/S품 단일화', dept:'구매팀', goal:119000000,  done:0,        date:'2026-12-31', status:'진행중' },
+        { name:'수선유지비 절감 → 시험설비 유지보수 자체 수행', dept:'시험파트', goal:30000000, done:10000000, date:'2026-12-31', status:'진행중' },
+        { name:'기계연 외주 시험 평가 용역사 참여',           dept:'시험파트', goal:84000000,  done:0,        date:'2026-12-31', status:'진행중' },
+        { name:'추가 원가절감',                              dept:'전사',    goal:350000004,  done:0,        date:'2026-12-31', status:'진행중' }
     ];
 
     // ── AI 스마트 실험실 ──
