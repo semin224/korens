@@ -5971,7 +5971,7 @@ initYearSel(); initHistorySel();
 (function loadDemoData() {
     // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
     // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v25') return;
+    if (localStorage.getItem('korens_demo_loaded') === 'v24') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
@@ -6115,16 +6115,13 @@ initYearSel(); initHistorySel();
         { type:'Method (방법)',   content:'조립 토크 기준값 상향 (25Nm → 28Nm)', date:'2026-04-10', dept:'품질팀', approve:'승인', impact:'보통', note:'작업표준서 개정 완료' }
     ];
 
- // ── 원가 절감 (사용자 제공 데이터 업데이트) ──
+    // ── 원가 절감 ──
     costData = [
-        { name: 'HMC/ KMC 필드클래임 변제 금액', dept: '품질본부', goal: 48000000, done: 0, date: '2026-12-31', status: '진행중' },
-        { name: '고객사 클래임 비용 협력사 상계처리', dept: '품질본부', goal: 130000000, done: 0, date: '2026-12-31', status: '진행중' },
-        { name: '고객사 필드클래임 이의신청, 변제', dept: '품질본부', goal: 160000000, done: 0, date: '2026-12-31', status: '진행중' },
-        { name: '해외법인(DV, PV), 고객, 협력사 유상 시험 비용', dept: '시험파트', goal: 40000000, done: 34512773, date: '2026-12-31', status: '진행중' },
-        { name: '26년 정기검사 Item 공급처 중복, A/S 품 단일화', dept: '품질본부', goal: 119000000, done: 0, date: '2026-12-31', status: '진행중' },
-        { name: '수선유지비 절감 → 시험설비 유지보수 자체 수행', dept: '시험파트', goal: 30000000, done: 10000000, date: '2026-12-31', status: '진행중' },
-        { name: '기계연 외주 시험 평가 용역사 참여', dept: '시험파트', goal: 84000000, done: 0, date: '2026-12-31', status: '진행중' },
-        { name: '추가 원가절감', dept: '품질본부', goal: 350000004, done: 0, date: '2026-12-31', status: '진행중' }
+        { name:'소재 변경을 통한 중량 절감',    dept:'개발팀', goal:8000,  done:8000,  date:'2026-02-28', status:'완료' },
+        { name:'공정 자동화 설비 도입',          dept:'생산팀', goal:15000, done:9500,  date:'2026-06-30', status:'진행중' },
+        { name:'협력사 단가 재협상',             dept:'구매팀', goal:5000,  done:5000,  date:'2026-01-31', status:'완료' },
+        { name:'불량률 감소 원가 절감 효과',     dept:'품질팀', goal:6000,  done:3200,  date:'2026-12-31', status:'진행중' },
+        { name:'에너지 사용량 최적화',           dept:'시설팀', goal:2500,  done:0,     date:'2026-09-30', status:'보류' }
     ];
 
     // ── AI 스마트 실험실 ──
