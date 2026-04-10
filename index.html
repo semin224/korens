@@ -5363,7 +5363,7 @@ function renderQualityKpiCards() {
     // ③ 원가 절감 - 달성률 / 과제별 추이
     const cGoal = costAnnualGoal>0?costAnnualGoal:costData.reduce((s,r)=>s+r.goal,0);
     const cDone = costData.reduce((s,r)=>s+r.done,0);
-    const cPct  = cGoal>0?Math.round(cDone/cGoal*100000000):0;
+    const cPct  = cGoal>0?Math.round(cDone/cGoal*100):0;
     const costVal = cPct+'%';
     const costGood = cPct>=70;
     const costComment = costGood ? '✅ 목표 달성' : '⚠️ 목표 미달';
@@ -5971,7 +5971,7 @@ initYearSel(); initHistorySel();
 (function loadDemoData() {
     // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
     // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v25') return;
+    if (localStorage.getItem('korens_demo_loaded') === 'v24') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
