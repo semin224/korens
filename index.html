@@ -6213,17 +6213,28 @@ initYearSel(); initHistorySel();
     localStorage.setItem('korens_pending', JSON.stringify(pendingTests));
 
     // ── TEST 사업화 더미
-    bizData = [
-        {year:2026, customer:'현대자동차', item:'EGR 밸브 내구 성능 수탁시험', amount:3200, status:'완료', owner:'홍길동', start:'2026-01-10', end:'2026-03-10'},
-        {year:2026, customer:'FORD',       item:'오일씰 내구 수탁시험',         amount:2800, status:'완료', owner:'홍길동', start:'2026-01-20', end:'2026-03-20'},
-        {year:2026, customer:'기아자동차', item:'냉각호스 복합환경 시험',       amount:1500, status:'완료', owner:'홍길동', start:'2026-02-05', end:'2026-03-15'},
-        {year:2026, customer:'Stellantis', item:'브라켓 진동 피로 시험',        amount:1200, status:'진행중', owner:'홍길동', start:'2026-03-01', end:'2026-05-01'},
-        {year:2026, customer:'현대자동차', item:'고압 펄스 내구 시험',          amount:2100, status:'진행중', owner:'홍길동', start:'2026-03-15', end:'2026-06-15'},
-        {year:2026, customer:'FORD',       item:'표면 처리 내식성 시험',        amount:900,  status:'계획',  owner:'홍길동', start:'2026-05-01', end:'2026-06-30'},
-        {year:2026, customer:'JLR',        item:'열충격 내구 시험 500h',        amount:3500, status:'진행중', owner:'홍길동', start:'2026-02-01', end:'2026-05-30'},
-        {year:2025, customer:'현대자동차', item:'성능 평가 수탁',               amount:2500, status:'완료', owner:'홍길동', start:'2025-06-01', end:'2025-08-31'},
-        {year:2025, customer:'기아자동차', item:'압력 내구 시험',               amount:1800, status:'완료', owner:'홍길동', start:'2025-09-01', end:'2025-11-30'}
-    ];
+  bizData = [
+    { year: 2026, customer: '현대모비스 MNAe', item: 'NEa front PE 4M test (2항목)', amount: 20742, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 MNAe', item: 'NEa rear PE 4M test (2항목)', amount: 18408, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 MNAe', item: 'MVa front PE 4M test (2항목)', amount: 19857, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '유니투스 충주제어기품질관리팀', item: 'RG3 FR/RR, SG2 PE단위 복합환경 평가', amount: 1438, status: '계획', owner: '손재철 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '셰플러 신뢰성팀', item: 'MV후륜 인버터기준 시험 8항목 평가', amount: 23323, status: '계획', owner: '김민제 연구', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전기구동부품개발팀', item: 'CN7 HEV HSG 5항목(부품 업체 변경 검증)', amount: 4720, status: '진행중', owner: '정지민 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대자동차 구동선행컨셉개발팀', item: '3IN1모터 고부하저자동차 내구 평가', amount: 5208, status: '완료', owner: '전동희 연구', start: '2026-03-01', end: '2026-04-10' },
+    { year: 2026, customer: 'KCL 자동차환경평가센터', item: 'JG1 복합환경 검증', amount: 643, status: '완료', owner: '염길택 선임', start: '2026-03-01', end: '2026-04-10' },
+    { year: 2026, customer: '보그워너 전동화시험평가팀', item: 'TAM PE시스템 정기신뢰성 평가', amount: 25529, status: '계획', owner: '우혁무 팀장', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '보그워너 전동화품질보증팀', item: 'SW PE시스템 정기신뢰성 평가(4항목)', amount: 4325, status: '계획', owner: '정형민 선임', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '현대모비스 구동시스템성능개발팀', item: 'LT2 모터시스템 내구 2항목 평가', amount: 10678, status: '계획', owner: '전준식 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: 'RG3 FR 통합내구/고속작동내구 평가', amount: 9092, status: '계획', owner: '조경수 책임', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화시스템엔지니어링팀', item: 'PE시스템 120kW 복합환경 평가', amount: 4122, status: '계획', owner: '최지환 책임', start: '2026-06-01', end: '' },
+    { year: 2026, customer: '보그워너 전동화시험평가팀', item: 'TAM(AX) PE시스템 통합내구 추가분(153시간)', amount: 1583, status: '계획', owner: '우혁무 팀장', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: 'NE N, RG3 통합내구/고속작동내구 평가', amount: 18125, status: '계획', owner: '조경수 책임', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '유니투스 평택품질관리팀', item: 'SG2 PE단위 26년 정기신뢰성 복합환경 평가', amount: 1188, status: '계획', owner: '정진수 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '인팩 이피엠 품질보증팀', item: 'NE후륜 신뢰성 평가(내구/환경)', amount: 27525, status: '계획', owner: '박성호 팀장', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: '3IN1 8항목 평가', amount: 55911, status: '계획', owner: '조경수 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: '2IN1 5항목 평가', amount: 22570, status: '계획', owner: '조경수 책임', start: '2026-04-01', end: '' }
+];
+
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
 
