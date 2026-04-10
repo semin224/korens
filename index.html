@@ -3187,6 +3187,7 @@ function setInspStatus(idx, status) {
         inspData[idx].doneDate = '';
     }
     localStorage.setItem('korens_insp', JSON.stringify(inspData));
+    if (window._fbSet) window._fbSet('korens_insp', inspData);
     renderInspection();
 }
 
@@ -5734,18 +5735,22 @@ function applyVisionResult(type, json) {
         } else if (type === 'cost') {
             costData.push({name:item.name,dept:item.dept,goal:item.goal||0,done:item.done||0,date:item.date||'',status:item.status||'진행중'});
             localStorage.setItem('korens_cost', JSON.stringify(costData));
-            desc = `💰 <b>${item.name}</b> — 목표 ${(item.goal||0).toLocaleString()}만원 / 실적 ${(item.done||0).toLocaleString()}만원`;
+            if (window._fbSet) window._fbSet('korens_cost', costData);
+            desc = `💰 <b>${item.name}</b> — 목표 ${(item.goal||0).toLocaleString()}원 / 실적 ${(item.done||0).toLocaleString()}원`;
         } else if (type === 'ailab') {
             ailabData.push({name:item.name,owner:item.owner,pct:item.pct||0,start:item.start||'',end:item.end||'',status:item.status||'진행중',note:item.note||''});
             localStorage.setItem('korens_ailab', JSON.stringify(ailabData));
+            if (window._fbSet) window._fbSet('korens_ailab', ailabData);
             desc = `🧪 <b>${item.name}</b> — ${item.owner} / ${item.pct}%`;
         } else if (type === 'insp') {
             inspData.push({year:item.year,month:item.month,item:item.item,target:item.target||'',planDate:item.planDate||'',doneDate:item.doneDate||'',owner:item.owner||'',result:item.result||''});
             localStorage.setItem('korens_insp', JSON.stringify(inspData));
+            if (window._fbSet) window._fbSet('korens_insp', inspData);
             desc = `📅 <b>${item.year}년 ${item.month}월</b> — ${item.item}`;
         } else if (type === '4m') {
             data4m.push({type:item.type,content:item.content,date:item.date||'',dept:item.dept||'',approve:item.approve||'검토중',impact:item.impact||'보통',note:item.note||''});
             localStorage.setItem('korens_4m', JSON.stringify(data4m));
+            if (window._fbSet) window._fbSet('korens_4m', data4m);
             desc = `🔄 <b>${item.type}</b> — ${item.content}`;
         }
         preview += `<div style="padding:9px 14px;background:#f0fdf4;border-radius:8px;font-size:0.84rem;margin-top:6px;">${desc}</div>`;
@@ -5989,7 +5994,7 @@ initYearSel(); initHistorySel();
 (function loadDemoData() {
     // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
     // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v24') return;
+    if (localStorage.getItem('korens_demo_loaded') === 'v25') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
@@ -6212,33 +6217,32 @@ initYearSel(); initHistorySel();
     );
     localStorage.setItem('korens_pending', JSON.stringify(pendingTests));
 
-    // ── TEST 사업화 더미
-  bizData = [
-    { year: 2026, customer: '현대모비스 MNAe', item: 'NEa front PE 4M test (2항목)', amount: 20742, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대모비스 MNAe', item: 'NEa rear PE 4M test (2항목)', amount: 18408, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대모비스 MNAe', item: 'MVa front PE 4M test (2항목)', amount: 19857, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '유니투스 충주제어기품질관리팀', item: 'RG3 FR/RR, SG2 PE단위 복합환경 평가', amount: 1438, status: '계획', owner: '손재철 책임', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '셰플러 신뢰성팀', item: 'MV후륜 인버터기준 시험 8항목 평가', amount: 23323, status: '계획', owner: '김민제 연구', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대모비스 전기구동부품개발팀', item: 'CN7 HEV HSG 5항목(부품 업체 변경 검증)', amount: 4720, status: '진행중', owner: '정지민 책임', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대자동차 구동선행컨셉개발팀', item: '3IN1모터 고부하저자동차 내구 평가', amount: 5208, status: '완료', owner: '전동희 연구', start: '2026-03-01', end: '2026-04-10' },
-    { year: 2026, customer: 'KCL 자동차환경평가센터', item: 'JG1 복합환경 검증', amount: 643, status: '완료', owner: '염길택 선임', start: '2026-03-01', end: '2026-04-10' },
-    { year: 2026, customer: '보그워너 전동화시험평가팀', item: 'TAM PE시스템 정기신뢰성 평가', amount: 25529, status: '계획', owner: '우혁무 팀장', start: '2026-03-01', end: '' },
-    { year: 2026, customer: '보그워너 전동화품질보증팀', item: 'SW PE시스템 정기신뢰성 평가(4항목)', amount: 4325, status: '계획', owner: '정형민 선임', start: '2026-03-01', end: '' },
-    { year: 2026, customer: '현대모비스 구동시스템성능개발팀', item: 'LT2 모터시스템 내구 2항목 평가', amount: 10678, status: '계획', owner: '전준식 책임', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: 'RG3 FR 통합내구/고속작동내구 평가', amount: 9092, status: '계획', owner: '조경수 책임', start: '2026-03-01', end: '' },
-    { year: 2026, customer: '현대모비스 전동화시스템엔지니어링팀', item: 'PE시스템 120kW 복합환경 평가', amount: 4122, status: '계획', owner: '최지환 책임', start: '2026-06-01', end: '' },
-    { year: 2026, customer: '보그워너 전동화시험평가팀', item: 'TAM(AX) PE시스템 통합내구 추가분(153시간)', amount: 1583, status: '계획', owner: '우혁무 팀장', start: '2026-03-01', end: '' },
-    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: 'NE N, RG3 통합내구/고속작동내구 평가', amount: 18125, status: '계획', owner: '조경수 책임', start: '2026-03-01', end: '' },
-    { year: 2026, customer: '유니투스 평택품질관리팀', item: 'SG2 PE단위 26년 정기신뢰성 복합환경 평가', amount: 1188, status: '계획', owner: '정진수 책임', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '인팩 이피엠 품질보증팀', item: 'NE후륜 신뢰성 평가(내구/환경)', amount: 27525, status: '계획', owner: '박성호 팀장', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: '3IN1 8항목 평가', amount: 55911, status: '계획', owner: '조경수 책임', start: '2026-04-01', end: '' },
-    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: '2IN1 5항목 평가', amount: 22570, status: '계획', owner: '조경수 책임', start: '2026-04-01', end: '' }
-];
-
+    // ── TEST 사업화
+    bizData = [
+        { year:2026, customer:'현대모비스 MNAe',                    item:'NEa front PE 4M test (2항목)',                   amount:20742,  status:'계획',  owner:'Justin manager', start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대모비스 MNAe',                    item:'NEa rear PE 4M test (2항목)',                    amount:18408,  status:'계획',  owner:'Justin manager', start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대모비스 MNAe',                    item:'MVa front PE 4M test (2항목)',                   amount:19857,  status:'계획',  owner:'Justin manager', start:'2026-04-01', end:'' },
+        { year:2026, customer:'유니투스 충주제어기품질관리팀',       item:'RG3 FR/RR, SG2 PE단위 복합환경 평가',            amount:1438,   status:'계획',  owner:'손재철 책임',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'셰플러 신뢰성팀',                    item:'MV후륜 인버터기준 시험 8항목 평가',              amount:23323,  status:'계획',  owner:'김민제 연구',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대모비스 전기구동부품개발팀',       item:'CN7 HEV HSG 5항목(부품 업체 변경 검증)',         amount:4720,   status:'진행중',owner:'정지민 책임',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대자동차 구동선행컨셉개발팀',       item:'3IN1모터 고부하저자동차 내구 평가',              amount:5208,   status:'완료',  owner:'전동희 연구',    start:'2026-03-01', end:'2026-04-10' },
+        { year:2026, customer:'KCL 자동차환경평가센터',              item:'JG1 복합환경 검증',                              amount:643,    status:'완료',  owner:'염길택 선임',    start:'2026-03-01', end:'2026-04-10' },
+        { year:2026, customer:'보그워너 전동화시험평가팀',           item:'TAM PE시스템 정기신뢰성 평가',                   amount:25529,  status:'계획',  owner:'우혁무 팀장',    start:'2026-03-01', end:'' },
+        { year:2026, customer:'보그워너 전동화품질보증팀',           item:'SW PE시스템 정기신뢰성 평가(4항목)',             amount:4325,   status:'계획',  owner:'정형민 선임',    start:'2026-03-01', end:'' },
+        { year:2026, customer:'현대모비스 구동시스템성능개발팀',     item:'LT2 모터시스템 내구 2항목 평가',                 amount:10678,  status:'계획',  owner:'전준식 책임',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'RG3 FR 통합내구/고속작동내구 평가',              amount:9092,   status:'계획',  owner:'조경수 책임',    start:'2026-03-01', end:'' },
+        { year:2026, customer:'현대모비스 전동화시스템엔지니어링팀', item:'PE시스템 120kW 복합환경 평가',                   amount:4122,   status:'계획',  owner:'최지환 책임',    start:'2026-06-01', end:'' },
+        { year:2026, customer:'보그워너 전동화시험평가팀',           item:'TAM(AX) PE시스템 통합내구 추가분(153시간)',       amount:1583,   status:'계획',  owner:'우혁무 팀장',    start:'2026-03-01', end:'' },
+        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'NE N, RG3 통합내구/고속작동내구 평가',           amount:18125,  status:'계획',  owner:'조경수 책임',    start:'2026-03-01', end:'' },
+        { year:2026, customer:'유니투스 평택품질관리팀',             item:'SG2 PE단위 26년 정기신뢰성 복합환경 평가',       amount:1188,   status:'계획',  owner:'정진수 책임',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'인팩 이피엠 품질보증팀',              item:'NE후륜 신뢰성 평가(내구/환경)',                   amount:27525,  status:'계획',  owner:'박성호 팀장',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'3IN1 8항목 평가',                                amount:55911,  status:'계획',  owner:'조경수 책임',    start:'2026-04-01', end:'' },
+        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'2IN1 5항목 평가',                                amount:22570,  status:'계획',  owner:'조경수 책임',    start:'2026-04-01', end:'' }
+    ];
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
 
-    localStorage.setItem('korens_demo_loaded', 'v24');
+    localStorage.setItem('korens_demo_loaded', 'v25');
     save();
     saveAll();
 })();
