@@ -5971,7 +5971,7 @@ initYearSel(); initHistorySel();
 (function loadDemoData() {
     // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
     // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v24') return;
+    if (localStorage.getItem('korens_demo_loaded') === 'v25') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
