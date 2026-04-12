@@ -1486,10 +1486,10 @@
             <div class="form-group"><label>과제명</label><input type="text" id="cost-name" placeholder="과제명"></div>
             <div class="form-row">
                 <div class="form-group"><label>담당 부서</label><input type="text" id="cost-dept"></div>
-                <div class="form-group"><label>목표 금액 (만원)</label><input type="number" id="cost-goal" placeholder="0"></div>
+                <div class="form-group"><label>목표 금액 (원)</label><input type="number" id="cost-goal" placeholder="예) 48000000"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label>실적 금액 (만원)</label><input type="number" id="cost-done" placeholder="0"></div>
+                <div class="form-group"><label>실적 금액 (원)</label><input type="number" id="cost-done" placeholder="0"></div>
                 <div class="form-group"><label>완료 예정일</label><input type="date" id="cost-date"></div>
             </div>
             <div class="form-group"><label>상태</label>
@@ -2325,6 +2325,11 @@ function saveCqData() {
     form.fields.forEach(f => { row[f.id] = document.getElementById(f.id)?.value || ''; });
     cqData[currentCqType].push(row);
     saveAll(); renderCq(); closeModal('cq-modal');
+    // 입력값 초기화
+    form.fields.forEach(f => {
+        const el = document.getElementById(f.id);
+        if (el && el.tagName !== 'SELECT') el.value = '';
+    });
 }
 
 // ═══════════════════════════════════════════
@@ -2348,8 +2353,10 @@ function save4m() {
 // 원가 절감 저장
 // ═══════════════════════════════════════════
 function saveCost() {
+    const name = document.getElementById('cost-name').value.trim();
+    if (!name) return alert('과제명을 입력하세요.');
     costData.push({
-        name:   document.getElementById('cost-name').value,
+        name,
         dept:   document.getElementById('cost-dept').value,
         goal:   parseFloat(document.getElementById('cost-goal').value)||0,
         done:   parseFloat(document.getElementById('cost-done').value)||0,
@@ -2357,32 +2364,38 @@ function saveCost() {
         status: document.getElementById('cost-status').value
     });
     saveAll(); renderCost(); closeModal('cost-modal');
+    ['cost-name','cost-dept','cost-goal','cost-done','cost-date'].forEach(id => document.getElementById(id).value = '');
 }
 
 // ═══════════════════════════════════════════
 // AI 실험실 저장
 // ═══════════════════════════════════════════
 function saveAilab() {
-    ailabData.push({
-        name:   document.getElementById('lab-name').value,
-        owner:  document.getElementById('lab-owner').value,
-        pct:    parseInt(document.getElementById('lab-pct').value)||0,
-        start:  document.getElementById('lab-start').value,
-        end:    document.getElementById('lab-end').value,
-        status: document.getElementById('lab-status').value,
-        note:   document.getElementById('lab-note').value
-    });
+    const name = document.getElementById('lab-name').value.trim();
+    if (!name) return alert('과제명을 입력하세요.');
+    const start  = document.getElementById('lab-start').value;
+    const end    = document.getElementById('lab-end').value;
+    const status = document.getElementById('lab-status').value;
+    // 진행률: 완료면 100, 계획이면 0, 진행중이면 날짜로 자동계산
+    let pct = parseInt(document.getElementById('lab-pct').value) || 0;
+    if (status === '완료') pct = 100;
+    else if (status === '계획') pct = 0;
+    else if (start && end) pct = Math.min(100, Math.max(0, calcProgress(start, end) || pct));
+    ailabData.push({ name, owner: document.getElementById('lab-owner').value, pct, start, end, status, note: document.getElementById('lab-note').value });
     saveAll(); renderAilab(); closeModal('ailab-modal');
+    ['lab-name','lab-owner','lab-pct','lab-start','lab-end','lab-note'].forEach(id => document.getElementById(id).value = '');
 }
 
 // ═══════════════════════════════════════════
 // 정기신뢰성검사 저장
 // ═══════════════════════════════════════════
 function saveInsp() {
+    const item = document.getElementById('insp-item').value.trim();
+    if (!item) return alert('검사 항목을 입력하세요.');
     inspData.push({
         year:    parseInt(document.getElementById('insp-year').value),
         month:   parseInt(document.getElementById('insp-month-sel').value),
-        item:    document.getElementById('insp-item').value,
+        item,
         target:  document.getElementById('insp-target').value,
         planDate:document.getElementById('insp-plan-date').value,
         doneDate:document.getElementById('insp-done-date').value,
@@ -2390,6 +2403,7 @@ function saveInsp() {
         result:  document.getElementById('insp-result').value
     });
     saveAll(); renderInspection(); closeModal('insp-modal');
+    ['insp-item','insp-target','insp-plan-date','insp-done-date','insp-owner'].forEach(id => document.getElementById(id).value = '');
 }
 
 // ═══════════════════════════════════════════
@@ -3646,43 +3660,52 @@ function renderHomeScoreCards() {
 
     scoreCards.innerHTML = Object.entries(byCust).map(([cust, info], ci) => {
         const color    = COLORS[ci % COLORS.length];
+        const isStar   = info.metric.includes('STAR');
         const isLpkm   = info.metric.includes('LPKM');
-        const yMax     = isLpkm ? 5 : null;
+        const isScore1000 = info.metric.includes('Q1 Score');
+        const yMax     = isLpkm ? 5 : isScore1000 ? 1100 : null;
         const targetV  = info.target;
         const lastRow  = info.rows[info.rows.length-1];
         const lastAvg  = lastRow ? lastRow.avgV : 0;
-        const isGood   = lastAvg >= targetV;
-        const statusClr = isGood ? '#10b981' : '#f59e0b';
-        const avgStr   = lastAvg.toFixed(isLpkm ? 1 : 0);
-        const hist     = info.rows.slice(-6); // 최근 6분기
+
+        // HKMC(STAR): 2026년 집계중 처리
+        const isPending = isStar;
+        const isGood   = isPending ? true : lastAvg >= targetV;
+        const statusClr = isPending ? '#6366f1' : isGood ? '#10b981' : '#f59e0b';
+
+        // 표시 점수
+        const avgStr = isPending ? '집계중' : (isLpkm ? lastAvg.toFixed(1) : Math.round(lastAvg).toString());
+
+        const hist = info.rows.slice(-6);
 
         const minF = lastRow ? Math.min(lastRow.q, lastRow.d, lastRow.rs) : 0;
         const minL = !lastRow ? '' : lastRow.q===minF?'품질':lastRow.d===minF?'납기':'대응';
-        const comment  = isGood ? '✅ 목표 달성' : ('⚠️ '+minL+'점 개선 필요');
+        const comment = isPending ? '📊 2026년 집계중' : isGood ? '✅ 목표 달성' : ('⚠️ '+minL+'점 개선 필요');
 
-        // SVG - 크게, 1~12월 기준
+        // 합격선 라벨
+        const passLabel = isStar ? '목표 4.5★' : isScore1000 ? '합격 800' : '합격 '+info.target;
+
+        // SVG
         const barW=36, barGap=7, svgH=110, padL=4, padB=20, padT=32;
         const dataMax = yMax || Math.max(...hist.map(h=>h.avgV), targetV * 1.1, 1);
-        const svgW    = hist.length * (barW+barGap) + barGap + padL*2 + 28; // 28px = 목표선 라벨 공간
+        const svgW    = hist.length * (barW+barGap) + barGap + padL*2 + 38;
         const chartH  = svgH - padB - padT;
-
-        // 목표선 Y
-        const goalY = padT + chartH - Math.round(targetV/dataMax*chartH);
+        const goalY   = padT + chartH - Math.round(targetV/dataMax*chartH);
 
         const goalLine =
-            '<line x1="'+padL+'" y1="'+goalY+'" x2="'+(svgW-30)+'" y2="'+goalY+
+            '<line x1="'+padL+'" y1="'+goalY+'" x2="'+(svgW-38)+'" y2="'+goalY+
             '" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>'+
-            '<text x="'+(svgW-28)+'" y="'+(goalY+4)+'" font-size="8" fill="#94a3b8" font-weight="bold">'+targetV+'</text>';
+            '<text x="'+(svgW-36)+'" y="'+(goalY+4)+'" font-size="7.5" fill="#94a3b8" font-weight="bold">'+passLabel+'</text>';
 
         const bars = hist.map((h, bi) => {
             const bh  = Math.max(Math.round(h.avgV/dataMax*chartH), 2);
             const bx  = padL + barGap + bi*(barW+barGap);
             const by  = padT + chartH - bh;
-            const bc  = h.avgV >= targetV ? color : '#ef4444';
+            const bc  = isPending ? '#a5b4fc' : h.avgV >= targetV ? color : '#ef4444';
             const ql  = (h.qtr||'').replace(/\d{4}-Q/,'Q');
             const lbl = isLpkm ? h.avgV.toFixed(1) : Math.round(h.avgV).toString();
             return '<rect x="'+bx+'" y="'+by+'" width="'+barW+'" height="'+bh+'" rx="4" fill="'+bc+'" opacity="0.9"/>'+
-                   '<text x="'+(bx+barW/2)+'" y="'+(by-5)+'" text-anchor="middle" font-size="10" fill="'+bc+'" font-weight="bold">'+lbl+'</text>'+
+                   '<text x="'+(bx+barW/2)+'" y="'+(by-5)+'" text-anchor="middle" font-size="10" fill="'+bc+'" font-weight="bold">'+(isPending?lbl+'★':lbl)+'</text>'+
                    '<text x="'+(bx+barW/2)+'" y="'+(svgH-5)+'" text-anchor="middle" font-size="8" fill="#94a3b8">'+ql+'</text>';
         }).join('');
 
@@ -3903,8 +3926,8 @@ function openCostDetail(idx) {
         ${I('name','과제명','text',r.name,true)}
         ${I('dept','담당 부서','text',r.dept)}
         ${I('status','상태','select',r.status,false,['진행중','완료','보류'])}
-        ${I('goal','목표 금액(만원)','number',r.goal)}
-        ${I('done','실적 금액(만원)','number',r.done)}
+        ${I('goal','목표 금액(원)','number',r.goal)}
+        ${I('done','실적 금액(원)','number',r.done)}
         ${I('date','완료 예정일','date',r.date,true)}
     </div>`;
     document.getElementById('cq-detail-title').textContent = '💰 원가 절감 — 상세 / 수정';
@@ -3957,7 +3980,12 @@ function saveAilabDetail() {
     const r=ailabData[_detailIdx]; if(!r) return;
     const g=id=>{ const el=document.getElementById('de-'+id); return el?el.value:''; };
     r.name=g('name'); r.owner=g('owner'); r.status=g('status');
-    r.pct=parseInt(g('pct'))||0; r.start=g('start'); r.end=g('end'); r.note=g('note');
+    r.start=g('start'); r.end=g('end'); r.note=g('note');
+    // 진행률 자동 계산
+    if (r.status === '완료') r.pct = 100;
+    else if (r.status === '계획') r.pct = 0;
+    else if (r.start && r.end) r.pct = Math.min(100, Math.max(0, calcProgress(r.start, r.end) || parseInt(g('pct')) || 0));
+    else r.pct = parseInt(g('pct')) || 0;
     localStorage.setItem('korens_ailab',JSON.stringify(ailabData));
     if (window._fbSet) window._fbSet('korens_ailab', ailabData);
     renderAilab(); closeModal('cq-detail-modal');
@@ -4646,6 +4674,15 @@ function renderCost() {
 // 렌더 - AI 실험실
 // ═══════════════════════════════════════════
 function renderAilab() {
+    // 렌더할 때마다 진행중 항목의 진행률을 날짜 기반으로 자동 갱신
+    ailabData.forEach(r => {
+        if (r.status === '완료') r.pct = 100;
+        else if (r.status === '계획') r.pct = 0;
+        else if (r.start && r.end) {
+            const auto = calcProgress(r.start, r.end);
+            if (auto !== null) r.pct = auto;
+        }
+    });
     const done=ailabData.filter(r=>r.status==='완료').length;
     const run=ailabData.filter(r=>r.status==='진행중').length;
     const avgPct=ailabData.length?Math.round(ailabData.reduce((s,r)=>s+r.pct,0)/ailabData.length):0;
@@ -5102,6 +5139,7 @@ function saveBiz() {
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
     renderBiz(); closeModal('biz-modal');
+    ['biz-customer','biz-item','biz-amount','biz-owner','biz-start','biz-end'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
 }
 
 let _bizEditIdx = -1;
@@ -5271,7 +5309,7 @@ function renderBiz() {
         return `<tr>
             <td>${r.customer||'-'}</td>
             <td>${r.item}</td>
-            <td style="white-space:nowrap;">${(r.amount||0).toLocaleString()}만원</td>
+            <td style="white-space:nowrap;font-weight:600;">${(r.amount||0).toLocaleString('ko-KR')}만원</td>
             <td>${fmtDate(r.start)}</td>
             <td>${fmtDate(r.end)}</td>
             <td><span class="status-tag ${sc}">${r.status}</span></td>
@@ -5311,7 +5349,7 @@ const _cardMetrics = {
         () => { const biz=JSON.parse(localStorage.getItem('korens_biz')||'[]'); const prog=biz.filter(r=>r.status==='진행중').reduce((s,r)=>s+(r.amount||0),0); return {num:(prog/10000).toFixed(1)+'억', label:'진행 중'}; }
     ],
     cost: [
-        () => { const d=(costData||[]).reduce((s,r)=>s+r.done,0); return {num:(d/100).toFixed(1)+'억', label:'현재 실적'}; },
+        () => { const d=(costData||[]).reduce((s,r)=>s+r.done,0); return {num:(d/100000000).toFixed(2)+'억', label:'현재 실적'}; },
         () => { const g=costAnnualGoal>0?costAnnualGoal:(costData||[]).reduce((s,r)=>s+r.goal,0); const d=(costData||[]).reduce((s,r)=>s+r.done,0); const p=g>0?Math.round(d/g*100):0; return {num:p+'%', label:'목표 달성률'}; },
         () => { const run=(costData||[]).filter(r=>r.status==='진행중').length; return {num:run+'건', label:'진행 중 과제'}; }
     ],
@@ -5600,7 +5638,7 @@ function renderQualityKpiCards() {
     var costEl = document.getElementById('dc-cost-num');
     var costLbl = document.getElementById('dc-cost-label');
     if (costEl) costEl.textContent = cGoal > 0 ? Math.round(cDone/cGoal*100)+'%' : '-';
-    if (costLbl) costLbl.textContent = (cDone/10000).toFixed(1)+'억원 달성';
+    if (costLbl) costLbl.textContent = (cDone/100000000).toFixed(2)+'억원 달성';
 
     var labRun = ailabData.filter(function(r){ return r.status==='진행중'; }).length;
     var labAvg = ailabData.length ? Math.round(ailabData.reduce(function(s,r){ return s+r.pct; },0)/ailabData.length) : 0;
@@ -5994,7 +6032,7 @@ initYearSel(); initHistorySel();
 (function loadDemoData() {
     // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
     // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v25') return;
+    if (localStorage.getItem('korens_demo_loaded') === 'v26') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
@@ -6053,19 +6091,22 @@ initYearSel(); initHistorySel();
 
     // ── 고객 만족도 ──
     cqData.score = [
-        // HKMC (현대+기아 통합) - BMW LPKM 기준
-        { 'cq-customer':'HKMC', 'cq-quarter':'2025-Q4', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.6', 'cq-s-response':'4.7', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        { 'cq-customer':'HKMC', 'cq-quarter':'2026-Q1', 'cq-s-quality':'4.6', 'cq-s-delivery':'4.5', 'cq-s-response':'4.6', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        // BMW - LPKM
-        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q4', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.7', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        { 'cq-customer':'BMW', 'cq-quarter':'2026-Q1', 'cq-s-quality':'4.6', 'cq-s-delivery':'4.5', 'cq-s-response':'4.6', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        // FORD - Q1
-        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q4', 'cq-s-quality':'93', 'cq-s-delivery':'92', 'cq-s-response':'91', 'cq-metric':'Q1', 'cq-target':'90' },
-        { 'cq-customer':'FORD', 'cq-quarter':'2026-Q1', 'cq-s-quality':'94', 'cq-s-delivery':'93', 'cq-s-response':'92', 'cq-metric':'Q1', 'cq-target':'90' },
-        // Stellantis (FCA) - GEBSC
-        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q4', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'79', 'cq-metric':'GEBSC', 'cq-target':'85' },
-        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2026-Q1', 'cq-s-quality':'80', 'cq-s-delivery':'81', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
-        // JLR - Q1 Score
+        // HKMC - 스타 등급 (2025년 3점, 2026년 집계중)
+        { 'cq-customer':'HKMC', 'cq-quarter':'2025-Q4', 'cq-s-quality':'3.0', 'cq-s-delivery':'3.0', 'cq-s-response':'3.0', 'cq-metric':'STAR', 'cq-target':'4.5' },
+        // BMW - LPKM (합격선 4.0, 2025년 4.8, 현재 4.6, 목표 4.5)
+        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q3', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.8', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5' },
+        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q4', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.8', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5' },
+        { 'cq-customer':'BMW', 'cq-quarter':'2026-Q1', 'cq-s-quality':'4.6', 'cq-s-delivery':'4.6', 'cq-s-response':'4.6', 'cq-metric':'LPKM', 'cq-target':'4.5' },
+        // FORD - Q1 (합격선 80, 2025년 94, 현재 94, 목표 90)
+        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q3', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90' },
+        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q4', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90' },
+        { 'cq-customer':'FORD', 'cq-quarter':'2026-Q1', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90' },
+        // Stellantis(FCA) - GEBSC (합격선 80, 현재 80, 목표 85)
+        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q3', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
+        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q4', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
+        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2026-Q1', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
+        // JLR - Q1 Score (합격선 800, 2025년 1000, 현재 1000, 목표 1000)
+        { 'cq-customer':'JLR', 'cq-quarter':'2025-Q3', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000' },
         { 'cq-customer':'JLR', 'cq-quarter':'2025-Q4', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000' },
         { 'cq-customer':'JLR', 'cq-quarter':'2026-Q1', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000' }
     ];
@@ -6242,7 +6283,7 @@ initYearSel(); initHistorySel();
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
 
-    localStorage.setItem('korens_demo_loaded', 'v25');
+    localStorage.setItem('korens_demo_loaded', 'v26');
     save();
     saveAll();
 })();
