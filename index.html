@@ -3719,9 +3719,8 @@ function renderHomeScoreCards() {
               '<div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%;margin-bottom:6px;gap:4px;">'+
 	      '<div style="font-size:0.88rem;font-weight:700;color:var(--text);padding-top:2px;min-width:0;word-break:break-all;">'+cust+'</div>'+
               '<div style="text-align:right;flex-shrink:0;max-width:52%;">'+
-                  '<div style="font-size:1rem;font-weight:700;color:'+statusClr+';line-height:1.2;">'+avgStr+(isLpkm?'':'점')+
-                  (cust==='HKMC'?'<span style="font-size:1rem;font-weight:700;color:'+statusClr+';margin-left:4px;">스타</span>':'')+
-                  (cust==='BMW'?'<span style="font-size:1rem;font-weight:700;color:'+statusClr+';margin-left:4px;">점</span>':'')+
+                  '<div style="font-size:1rem;font-weight:700;color:'+statusClr+';line-height:1.2;">'+
+                  (isPending ? '집계중' : avgStr + (isStar ? '★' : isLpkm ? '점' : isScore1000 ? '점' : '점'))+
                   '</div>'+
 '<div style="font-size:0.62rem;font-weight:700;color:'+statusClr+';word-break:keep-all;line-height:1.3;margin-top:2px;">'+comment+'</div>'+
                  '</div>'+
@@ -6032,7 +6031,7 @@ initYearSel(); initHistorySel();
 (function loadDemoData() {
     // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
     // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v26') return;
+    if (localStorage.getItem('korens_demo_loaded') === 'v27') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
@@ -6283,7 +6282,7 @@ initYearSel(); initHistorySel();
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
 
-    localStorage.setItem('korens_demo_loaded', 'v26');
+    localStorage.setItem('korens_demo_loaded', 'v27');
     save();
     saveAll();
 })();
