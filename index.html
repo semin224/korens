@@ -2486,6 +2486,8 @@ function saveCqData() {
     form.fields.forEach(f => { row[f.id] = document.getElementById(f.id)?.value || ''; });
     cqData[currentCqType].push(row);
     saveAll(); renderCq(); closeModal('cq-modal');
+    // 입력값 초기화
+    form.fields.forEach(f => { const el=document.getElementById(f.id); if(el&&el.tagName!=='SELECT') el.value=''; });
 }
 
 // ═══════════════════════════════════════════
@@ -2509,8 +2511,10 @@ function save4m() {
 // 원가 절감 저장
 // ═══════════════════════════════════════════
 function saveCost() {
+    const name = document.getElementById('cost-name').value.trim();
+    if (!name) return alert('과제명을 입력하세요.');
     costData.push({
-        name:   document.getElementById('cost-name').value,
+        name,
         dept:   document.getElementById('cost-dept').value,
         goal:   parseFloat(document.getElementById('cost-goal').value)||0,
         done:   parseFloat(document.getElementById('cost-done').value)||0,
@@ -2518,32 +2522,37 @@ function saveCost() {
         status: document.getElementById('cost-status').value
     });
     saveAll(); renderCost(); closeModal('cost-modal');
+    ['cost-name','cost-dept','cost-goal','cost-done','cost-date'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
 
 // ═══════════════════════════════════════════
 // AI 실험실 저장
 // ═══════════════════════════════════════════
 function saveAilab() {
-    ailabData.push({
-        name:   document.getElementById('lab-name').value,
-        owner:  document.getElementById('lab-owner').value,
-        pct:    parseInt(document.getElementById('lab-pct').value)||0,
-        start:  document.getElementById('lab-start').value,
-        end:    document.getElementById('lab-end').value,
-        status: document.getElementById('lab-status').value,
-        note:   document.getElementById('lab-note').value
-    });
+    const name = document.getElementById('lab-name').value.trim();
+    if (!name) return alert('과제명을 입력하세요.');
+    const start  = document.getElementById('lab-start').value;
+    const end    = document.getElementById('lab-end').value;
+    const status = document.getElementById('lab-status').value;
+    let pct = parseInt(document.getElementById('lab-pct').value)||0;
+    if (status==='완료') pct=100;
+    else if (status==='계획') pct=0;
+    else if (start && end) { const a=calcProgress(start,end); if(a!==null) pct=a; }
+    ailabData.push({ name, owner:document.getElementById('lab-owner').value, pct, start, end, status, note:document.getElementById('lab-note').value });
     saveAll(); renderAilab(); closeModal('ailab-modal');
+    ['lab-name','lab-owner','lab-pct','lab-start','lab-end','lab-note'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
 
 // ═══════════════════════════════════════════
 // 정기신뢰성검사 저장
 // ═══════════════════════════════════════════
 function saveInsp() {
+    const item = document.getElementById('insp-item').value.trim();
+    if (!item) return alert('검사 항목을 입력하세요.');
     inspData.push({
         year:    parseInt(document.getElementById('insp-year').value),
         month:   parseInt(document.getElementById('insp-month-sel').value),
-        item:    document.getElementById('insp-item').value,
+        item,
         target:  document.getElementById('insp-target').value,
         planDate:document.getElementById('insp-plan-date').value,
         doneDate:document.getElementById('insp-done-date').value,
@@ -2551,6 +2560,7 @@ function saveInsp() {
         result:  document.getElementById('insp-result').value
     });
     saveAll(); renderInspection(); closeModal('insp-modal');
+    ['insp-item','insp-target','insp-plan-date','insp-done-date','insp-owner'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
 }
 
 // ═══════════════════════════════════════════
@@ -4107,7 +4117,7 @@ function open4mDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        data4m.splice(idx,1); localStorage.setItem('korens_4m',JSON.stringify(data4m)); render4m(); closeModal('cq-detail-modal');
+        data4m.splice(idx,1); localStorage.setItem('korens_4m',JSON.stringify(data4m)); if(window._fbSet) window._fbSet('korens_4m',data4m); render4m(); closeModal('cq-detail-modal');
     };
     _detailType='4m'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -4137,7 +4147,7 @@ function openCostDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        costData.splice(idx,1); localStorage.setItem('korens_cost',JSON.stringify(costData)); renderCost(); closeModal('cq-detail-modal');
+        costData.splice(idx,1); localStorage.setItem('korens_cost',JSON.stringify(costData)); if(window._fbSet) window._fbSet('korens_cost',costData); renderCost(); closeModal('cq-detail-modal');
     };
     _detailType='cost'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -4168,7 +4178,7 @@ function openAilabDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        ailabData.splice(idx,1); localStorage.setItem('korens_ailab',JSON.stringify(ailabData)); renderAilab(); closeModal('cq-detail-modal');
+        ailabData.splice(idx,1); localStorage.setItem('korens_ailab',JSON.stringify(ailabData)); if(window._fbSet) window._fbSet('korens_ailab',ailabData); renderAilab(); closeModal('cq-detail-modal');
     };
     _detailType='ailab'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -4177,7 +4187,11 @@ function saveAilabDetail() {
     const r=ailabData[_detailIdx]; if(!r) return;
     const g=id=>{ const el=document.getElementById('de-'+id); return el?el.value:''; };
     r.name=g('name'); r.owner=g('owner'); r.status=g('status');
-    r.pct=parseInt(g('pct'))||0; r.start=g('start'); r.end=g('end'); r.note=g('note');
+    r.start=g('start'); r.end=g('end'); r.note=g('note');
+    if(r.status==='완료') r.pct=100;
+    else if(r.status==='계획') r.pct=0;
+    else if(r.start&&r.end){const a=calcProgress(r.start,r.end);r.pct=a!==null?a:(parseInt(g('pct'))||0);}
+    else r.pct=parseInt(g('pct'))||0;
     localStorage.setItem('korens_ailab',JSON.stringify(ailabData));
     if (window._fbSet) window._fbSet('korens_ailab', ailabData);
     renderAilab(); closeModal('cq-detail-modal');
@@ -4870,6 +4884,7 @@ function saveCostAnnualGoal() {
     const val = parseInt(document.getElementById('cost-annual-goal-input').value) || 0;
     costAnnualGoal = val;
     localStorage.setItem('korens_cost_annual_goal', val);
+    if(window._fbSet) window._fbSet('korens_cost_annual_goal', String(val));
     closeCostGoalEdit();
     renderCost();
 }
@@ -4921,11 +4936,15 @@ function renderCost() {
 // 렌더 - AI 실험실
 // ═══════════════════════════════════════════
 function renderAilab() {
+    // 날짜 기반 진행률 자동 갱신
+    ailabData.forEach(r => {
+        if (r.status==='완료') r.pct=100;
+        else if (r.status==='계획') r.pct=0;
+        else if (r.start && r.end) { const a=calcProgress(r.start,r.end); if(a!==null) r.pct=a; }
+    });
     const done = ailabData.filter(r => r.status === '완료').length;
     const run = ailabData.filter(r => r.status === '진행중').length;
-    
-    // [수정] 단순 pct 평균이 아니라, 전체 과제 중 '완료' 상태인 과제의 비율로 계산합니다.
-    const avgPct = ailabData.length ? Math.round((done / ailabData.length) * 100) : 0;
+    const avgPct = ailabData.length ? Math.round(ailabData.reduce((s,r)=>s+r.pct,0)/ailabData.length) : 0;
     
     let rows = '';
     ailabData.forEach((r, i) => {
@@ -5380,6 +5399,7 @@ function saveBiz() {
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
     renderBiz(); closeModal('biz-modal');
+    if (_bizEditIdx < 0) ['biz-customer','biz-item','biz-amount','biz-owner','biz-start','biz-end'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=''});
 }
 
 let _bizEditIdx = -1;
@@ -5918,18 +5938,22 @@ function applyVisionResult(type, json) {
         } else if (type === 'cost') {
             costData.push({name:item.name,dept:item.dept,goal:item.goal||0,done:item.done||0,date:item.date||'',status:item.status||'진행중'});
             localStorage.setItem('korens_cost', JSON.stringify(costData));
+            if(window._fbSet) window._fbSet('korens_cost', costData);
             desc = `💰 <b>${item.name}</b> — 목표 ${(item.goal||0).toLocaleString()}만원 / 실적 ${(item.done||0).toLocaleString()}만원`;
         } else if (type === 'ailab') {
             ailabData.push({name:item.name,owner:item.owner,pct:item.pct||0,start:item.start||'',end:item.end||'',status:item.status||'진행중',note:item.note||''});
             localStorage.setItem('korens_ailab', JSON.stringify(ailabData));
+            if(window._fbSet) window._fbSet('korens_ailab', ailabData);
             desc = `🧪 <b>${item.name}</b> — ${item.owner} / ${item.pct}%`;
         } else if (type === 'insp') {
             inspData.push({year:item.year,month:item.month,item:item.item,target:item.target||'',planDate:item.planDate||'',doneDate:item.doneDate||'',owner:item.owner||'',result:item.result||''});
             localStorage.setItem('korens_insp', JSON.stringify(inspData));
+            if(window._fbSet) window._fbSet('korens_insp', inspData);
             desc = `📅 <b>${item.year}년 ${item.month}월</b> — ${item.item}`;
         } else if (type === '4m') {
             data4m.push({type:item.type,content:item.content,date:item.date||'',dept:item.dept||'',approve:item.approve||'검토중',impact:item.impact||'보통',note:item.note||''});
             localStorage.setItem('korens_4m', JSON.stringify(data4m));
+            if(window._fbSet) window._fbSet('korens_4m', data4m);
             desc = `🔄 <b>${item.type}</b> — ${item.content}`;
         }
         preview += `<div style="padding:9px 14px;background:#f0fdf4;border-radius:8px;font-size:0.84rem;margin-top:6px;">${desc}</div>`;
