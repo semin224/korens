@@ -4,16 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>KORENS 품질 관리 시스템</title>
-    <!-- ══════════════════════════════════════════════════════
-         Firebase 설정
-         1) https://console.firebase.google.com 에서 프로젝트 생성
-         2) Firestore Database → 데이터베이스 만들기 (테스트 모드)
-         3) 프로젝트 설정 → 웹 앱 등록 → 아래 firebaseConfig 값을 교체하세요
-    ════════════════════════════════════════════════════════ -->
+
+    <!-- Firebase + 로그인 -->
     <script type="module">
-    import { initializeApp }           from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { initializeApp }     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection }
-                                       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+                                 from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+                                 from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     const firebaseConfig = {
         apiKey:            "AIzaSyBriuQFRaupyNqfsLlgCBJfLMNM1min_PI",
@@ -21,75 +19,116 @@
         projectId:         "proto-4b987",
         storageBucket:     "proto-4b987.firebasestorage.app",
         messagingSenderId: "993485705774",
-        appId:             "1:993485705774:web:11b5a488b90c368e1185bf",
-        measurementId:     "G-8B4XVXEJLH"
+        appId:             "1:993485705774:web:11b5a488b90c368e1185bf"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db  = getFirestore(app);
+    const app  = initializeApp(firebaseConfig);
+    const db   = getFirestore(app);
+    const auth = getAuth(app);
 
-    // ── 저장 함수 (컬렉션명, 데이터)
     window._fbSet = async (docId, data) => {
+        try { await setDoc(doc(db, "korens", docId), { value: JSON.stringify(data) }); }
+        catch(e) { console.error("[FB] 저장실패:", docId, e); }
+    };
+
+    window._fbLogin = async (email, pw) => {
         try {
-            await setDoc(doc(db, "korens", docId), { value: JSON.stringify(data) });
+            await signInWithEmailAndPassword(auth, email, pw);
         } catch(e) {
-            console.error("[Firebase] 저장 실패:", docId, e);
+            const msg = (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password")
+                ? "이메일 또는 비밀번호가 틀렸습니다." : "로그인 오류: " + e.message;
+            const errEl = document.getElementById("login-error");
+            if (errEl) errEl.textContent = msg;
         }
     };
 
-    // ── 초기 데이터 로드 (Firebase → localStorage)
+    window._fbLogout = async () => { await signOut(auth); };
+
+    onAuthStateChanged(auth, async (user) => {
+        const loginScreen = document.getElementById("login-screen");
+        const appScreen   = document.getElementById("app-screen");
+        if (user) {
+            if (loginScreen) loginScreen.style.display = "none";
+            if (appScreen)   appScreen.style.display   = "flex";
+            const emailEl = document.getElementById("user-email-display");
+            if (emailEl) emailEl.textContent = user.email;
+            await loadFromFirebase();
+        } else {
+            if (loginScreen) loginScreen.style.display = "flex";
+            if (appScreen)   appScreen.style.display   = "none";
+        }
+    });
+
     async function loadFromFirebase() {
-        const keys = [
-            'korens_tests','korens_breakdown','korens_completed',
-            'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp',
-            'korens_pending','korens_biz','korens_faults'
-        ];
-        const banner = document.getElementById('fb-loading-banner');
-        if (banner) banner.style.display = 'flex';
+        const keys = ["korens_tests","korens_breakdown","korens_completed",
+            "korens_cq","korens_4m","korens_cost","korens_ailab","korens_insp",
+            "korens_pending","korens_biz","korens_faults"];
+        let fbDemoVer = "";
+        try {
+            const dSnap = await getDoc(doc(db, "korens", "korens_demo_loaded"));
+            if (dSnap.exists()) fbDemoVer = dSnap.data().value || "";
+        } catch(e) {}
+        const localDemoVer = localStorage.getItem("korens_demo_loaded") || "";
+        if (localDemoVer > fbDemoVer) {
+            if (window._fbSet) window._fbSet("korens_demo_loaded", localDemoVer);
+            save(); saveAll(); return;
+        }
         let loaded = false;
         for (const key of keys) {
             try {
                 const snap = await getDoc(doc(db, "korens", key));
-                if (snap.exists()) {
-                    localStorage.setItem(key, snap.data().value);
-                    loaded = true;
-                }
-            } catch(e) {
-                console.warn("[Firebase] 로드 실패:", key, e);
-            }
+                if (snap.exists()) { localStorage.setItem(key, snap.data().value); loaded = true; }
+            } catch(e) {}
         }
-        if (banner) banner.style.display = 'none';
-        if (loaded) {
-            // Firebase 데이터로 전역 변수 재초기화 후 렌더
-            if (window._fbReloadAll) window._fbReloadAll();
-        }
-    }
+        if (loaded && window._fbReloadAll) window._fbReloadAll();
 
-    // ── 실시간 동기화 (다른 사람이 저장하면 자동 반영)
-    onSnapshot(collection(db, "korens"), (snapshot) => {
-        snapshot.docChanges().forEach(change => {
-            if (change.type === "modified" || change.type === "added") {
-                const key  = change.doc.id;
-                const val  = change.doc.data().value;
-                const prev = localStorage.getItem(key);
-                if (prev !== val) {
-                    localStorage.setItem(key, val);
-                    if (window._fbReloadAll) window._fbReloadAll();
+        onSnapshot(collection(db, "korens"), (snapshot) => {
+            snapshot.docChanges().forEach(change => {
+                if (change.type === "modified" || change.type === "added") {
+                    const key = change.doc.id;
+                    if (key === "korens_demo_loaded") return;
+                    const val = change.doc.data().value;
+                    if (localStorage.getItem(key) !== val) {
+                        localStorage.setItem(key, val);
+                        if (window._fbReloadAll) window._fbReloadAll();
+                    }
                 }
-            }
+            });
         });
-    });
-
-    // DOM 준비 후 로드
-    document.addEventListener("DOMContentLoaded", () => {
-        // 설정값이 기본값이면 Firebase 건너뜀
-        if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("여기에")) {
-            console.warn("[Firebase] firebaseConfig가 설정되지 않았습니다. localStorage 모드로 동작합니다.");
-            return;
-        }
-        loadFromFirebase();
-    });
+    }
     </script>
+
+    <style>
+    #login-screen {
+        display: flex; position: fixed; inset: 0; z-index: 9999;
+        background: linear-gradient(135deg, #1a2535 0%, #0f172a 100%);
+        align-items: center; justify-content: center;
+    }
+    .login-box {
+        background: #fff; border-radius: 20px; padding: 48px 44px 40px;
+        width: 100%; max-width: 400px;
+        box-shadow: 0 24px 60px rgba(0,0,0,0.4); text-align: center;
+    }
+    .login-logo { font-size: 2rem; font-weight: 800; color: #1a2535; letter-spacing: 2px; margin-bottom: 6px; }
+    .login-logo span { color: #3b82f6; }
+    .login-sub { font-size: 0.85rem; color: #64748b; margin-bottom: 32px; }
+    .login-field { text-align: left; margin-bottom: 16px; }
+    .login-field label { font-size: 0.78rem; font-weight: 700; color: #64748b; display: block; margin-bottom: 6px; }
+    .login-field input {
+        width: 100%; padding: 12px 16px; border: 1.5px solid #e2e8f0;
+        border-radius: 10px; font-size: 0.95rem; outline: none; box-sizing: border-box; transition: 0.2s;
+    }
+    .login-field input:focus { border-color: #3b82f6; }
+    .login-btn {
+        width: 100%; padding: 14px; background: #3b82f6; color: #fff;
+        border: none; border-radius: 10px; font-size: 1rem; font-weight: 700;
+        cursor: pointer; margin-top: 8px; transition: 0.2s;
+    }
+    .login-btn:hover { background: #2563eb; }
+    #login-error { color: #ef4444; font-size: 0.82rem; margin-top: 12px; min-height: 20px; }
+    #app-screen { display: none; width: 100%; height: 100vh; }
+    </style>
+
     <style>
         :root {
             --primary: #1a2535;
@@ -140,65 +179,159 @@
         body.dark .btn-gray { background: #1e293b; color: #94a3b8; border-color: #334155; }
         body.dark .dash-card[style*="linear-gradient"] { background: linear-gradient(135deg, #1e3a5f 0%, #1e293b 100%) !important; }
         body.dark .bar-fill { opacity: 0.85; }
-        /* ── 다크모드 전체 텍스트 가시성 강화 ── */
+        /* ══════════════════════════════════════════
+           다크모드 전체 텍스트 가시성 강화 (v18)
+           ══════════════════════════════════════════ */
         body.dark { color: #e2e8f0; }
-        body.dark * { color: inherit; }
-        /* 기본 텍스트 */
+
+        /* ── 기본 레이아웃 ── */
         body.dark .page-title  { color: #f1f5f9 !important; }
         body.dark .page-sub    { color: #94a3b8 !important; }
+        body.dark .card        { background: #1e293b !important; }
+        body.dark .card-header { border-color: #334155 !important; }
         body.dark .card-header h3 { color: #f1f5f9 !important; }
-        /* 테이블 */
-        body.dark table td     { color: #e2e8f0 !important; }
-        body.dark table th     { color: #94a3b8 !important; background: #1e293b; }
-        /* KPI */
+        body.dark .card-body   { color: #e2e8f0; }
+
+        /* ── 테이블 ── */
+        body.dark table        { color: #e2e8f0; }
+        body.dark table td     { color: #e2e8f0 !important; border-color: #334155 !important; }
+        body.dark table th     { color: #94a3b8 !important; background: #263548 !important; border-color: #334155 !important; }
+        body.dark .data-table tr:nth-child(even) td { background: #1a2740; }
+        body.dark .data-table tr:hover td { background: #263548 !important; }
+
+        /* ── KPI 박스 ── */
         body.dark .kpi-val     { color: #f1f5f9 !important; }
         body.dark .kpi-label   { color: #94a3b8 !important; }
         body.dark .kpi-sub     { color: #64748b !important; }
-        body.dark .kpi-box     { background: #1e293b; }
-        /* 입력 폼 */
-        body.dark input, body.dark select, body.dark textarea { color: #e2e8f0 !important; background: #1e293b !important; border-color: #334155 !important; }
+        body.dark .kpi-box     { background: #263548 !important; border-color: #334155 !important; }
+
+        /* ── 입력 폼 ── */
+        body.dark input, body.dark select, body.dark textarea {
+            color: #e2e8f0 !important; background: #263548 !important; border-color: #475569 !important;
+        }
+        body.dark input::placeholder, body.dark textarea::placeholder { color: #64748b !important; }
         body.dark .form-group label { color: #94a3b8 !important; }
-        /* 모달 */
-        body.dark .modal        { background: #1e293b; color: #e2e8f0; }
-        body.dark .modal-head   { border-color: #334155; }
-        body.dark .modal-footer { border-color: #334155; }
+        body.dark .form-group select { color: #e2e8f0 !important; }
+
+        /* ── 버튼 ── */
+        body.dark .btn-gray  { background: #263548 !important; color: #cbd5e1 !important; border-color: #475569 !important; }
+        body.dark .tab-btn   { background: #263548 !important; color: #94a3b8 !important; border-color: #475569 !important; }
+        body.dark .tab-btn.active { background: var(--accent) !important; color: #fff !important; }
+
+        /* ── 모달 ── */
+        body.dark .modal        { background: #1e293b !important; color: #e2e8f0; }
+        body.dark .modal-head   { border-color: #334155 !important; background: #263548; }
+        body.dark .modal-footer { border-color: #334155 !important; background: #263548; }
         body.dark .modal-head h2 { color: #f1f5f9 !important; }
-        /* 상세보기 */
-        body.dark .detail-field         { background: #263548; }
-        body.dark .detail-field .df-val { color: #e2e8f0 !important; }
+        body.dark .modal-wrap   { background: rgba(0,0,0,0.7) !important; }
+
+        /* ── 상세보기 ── */
+        body.dark .detail-field           { background: #263548 !important; }
+        body.dark .detail-field .df-val   { color: #e2e8f0 !important; }
         body.dark .detail-field .df-label { color: #64748b !important; }
-        /* 대기열 */
+
+        /* ── 대기열 ── */
         body.dark .queue-name  { color: #e2e8f0 !important; }
         body.dark .queue-date  { color: #94a3b8 !important; }
         body.dark .queue-pct   { color: #94a3b8 !important; }
         body.dark .queue-badge { color: #fff !important; }
-        /* 메일함 */
+        body.dark .queue-table td { border-color: #334155 !important; }
+        body.dark .cat-cell    { background: #263548 !important; border-right-color: var(--accent) !important; color: #cbd5e1 !important; }
+        body.dark .device-cell { color: #e2e8f0 !important; border-right-color: #334155 !important; }
+        body.dark .queue-item  { border-bottom-color: #334155 !important; }
+        body.dark .progress-wrap { background: #334155 !important; }
+
+        /* ── 메일함 ── */
         body.dark .mail-subject { color: #e2e8f0 !important; }
         body.dark .mail-from    { color: #93c5fd !important; }
         body.dark .mail-date    { color: #64748b !important; }
-        body.dark .mail-item    { border-color: #334155; }
-        /* 아코디언 */
-        body.dark .qa-dev-name  { color: #e2e8f0 !important; }
-        body.dark .qa-cat-title { color: #f1f5f9 !important; }
-        body.dark .qa-item-name { color: #e2e8f0 !important; }
-        body.dark .qa-item-date { color: #94a3b8 !important; }
-        body.dark .qa-empty     { color: #64748b !important; }
-        /* 정기검사 달력 */
+        body.dark .mail-item    { border-color: #334155 !important; }
+        body.dark .mail-item:hover { background: #263548 !important; }
+        body.dark .mail-item.unread { background: #1e3a5f !important; }
+
+        /* ── 아코디언 ── */
+        body.dark .qa-cat         { background: #1e293b !important; }
+        body.dark .qa-cat-header  { background: #1e293b; }
+        body.dark .qa-cat-header:hover { background: #263548 !important; }
+        body.dark .qa-dev-header:hover { background: #263548 !important; }
+        body.dark .qa-dev-body    { background: #161e2d !important; }
+        body.dark .qa-dev-name    { color: #e2e8f0 !important; }
+        body.dark .qa-cat-title   { color: #f1f5f9 !important; }
+        body.dark .qa-item-name   { color: #e2e8f0 !important; }
+        body.dark .qa-item-date   { color: #94a3b8 !important; }
+        body.dark .qa-empty       { color: #64748b !important; }
+        body.dark .qa-item        { border-bottom-color: #334155 !important; }
+        body.dark .qa-dev         { border-bottom-color: #334155 !important; }
+        body.dark .qa-cat-body    { border-top-color: #334155 !important; }
+
+        /* ── 정기검사 달력 ── */
+        body.dark .insp-month      { background: #263548 !important; border-color: #475569 !important; }
+        body.dark .insp-month.done-full { background: #14532d !important; border-color: var(--accent2) !important; }
+        body.dark .insp-month.done-part { background: #422006 !important; border-color: var(--warn) !important; }
         body.dark .im-label  { color: #94a3b8 !important; }
         body.dark .im-plan   { color: #e2e8f0 !important; }
         body.dark .im-done   { color: #6ee7b7 !important; }
         body.dark .im-pct    { color: #94a3b8 !important; }
-        /* 일반 서브텍스트 - 검정 방지 */
-        body.dark [style*="color:#1"] { color: #e2e8f0 !important; }
-        body.dark [style*="color: #1"] { color: #e2e8f0 !important; }
-        body.dark [style*="color:#0"] { color: #e2e8f0 !important; }
-        body.dark [style*="color:#2"] { color: #cbd5e1 !important; }
-        body.dark [style*="color:#3"] { color: #94a3b8 !important; }
+
+        /* ── 업로드 영역 ── */
+        body.dark .upload-area { background: #263548 !important; border-color: var(--accent) !important; color: #94a3b8 !important; }
+        body.dark .upload-area:hover { background: #334155 !important; }
+
+        /* ── 바 차트 ── */
         body.dark .bar-col .bar-val { color: #e2e8f0 !important; }
         body.dark .bar-label { color: #94a3b8 !important; }
-        /* 날씨 위젯 */
-        body.dark #weather-widget { background: #1e293b; border-color: #334155; }
-        body.dark #weather-temp { color: #f1f5f9 !important; }
+        body.dark .bar-fill  { opacity: 0.85; }
+
+        /* ── 날씨 위젯 ── */
+        body.dark #weather-widget { background: #263548 !important; border-color: #475569 !important; }
+        body.dark #weather-temp   { color: #f1f5f9 !important; }
+        body.dark #weather-desc   { color: #94a3b8 !important; }
+        body.dark #weather-hum, body.dark #weather-wind { color: #64748b !important; }
+
+        /* ── 대시보드 카드 ── */
+        body.dark .dash-card { background: #1e293b !important; border-color: #334155 !important; box-shadow: 0 2px 12px rgba(0,0,0,0.3) !important; }
+        body.dark .dash-card:hover { border-color: var(--accent) !important; }
+        body.dark .dash-card .dc-num   { color: var(--accent) !important; }
+        body.dark .dash-card .dc-label { color: #94a3b8 !important; }
+        body.dark .dash-card .dc-icon  { opacity: 0.9; }
+
+        /* ── AI Score 패널 ── */
+        body.dark #home-score-ai { background: #1e293b !important; border-color: #334155 !important; }
+        body.dark #home-score-ai-content { color: #e2e8f0 !important; }
+        body.dark #home-score-ai-content div { color: #e2e8f0 !important; }
+
+        /* ── 원가·사업화 테이블 금액 ── */
+        body.dark #tbody-cost td div { color: #e2e8f0 !important; }
+        body.dark #tbody-biz td div  { color: #e2e8f0 !important; }
+        body.dark #kpi-cost-done-sub { color: #64748b !important; }
+
+        /* ── 채팅 ── */
+        body.dark #chat-win   { background: #1e293b !important; border-color: #334155 !important; }
+        body.dark #chat-log   { background: #0f172a !important; }
+        body.dark .bot        { background: #334155 !important; color: #f1f5f9 !important; }
+        body.dark .user       { color: #f1f5f9 !important; }
+        body.dark #chat-input { background: #0f172a !important; color: #f1f5f9 !important; border-color: #334155 !important; }
+
+        /* ── 상태 태그 ── */
+        body.dark .tag-idle { background: rgba(148,163,184,0.15) !important; color: #94a3b8 !important; border-color: rgba(148,163,184,0.3) !important; }
+        body.dark .tag-run  { background: rgba(52,211,153,0.15)  !important; color: #6ee7b7 !important; border-color: rgba(52,211,153,0.3) !important; }
+        body.dark .tag-good { background: rgba(52,211,153,0.15)  !important; color: #6ee7b7 !important; border-color: rgba(52,211,153,0.3) !important; }
+        body.dark .tag-warn { background: rgba(251,191,36,0.15)  !important; color: #fcd34d !important; border-color: rgba(251,191,36,0.3) !important; }
+        body.dark .tag-bad  { background: rgba(248,113,113,0.15) !important; color: #fca5a5 !important; border-color: rgba(248,113,113,0.3) !important; }
+
+        /* ── 인라인 style color 보정 (어두운 색 방지) ── */
+        body.dark [style*="color:#1e"] { color: #e2e8f0 !important; }
+        body.dark [style*="color:#64748b"] { color: #94a3b8 !important; }
+        body.dark [style*="background:#f"] { background: #263548 !important; }
+        body.dark [style*="background: #f"] { background: #263548 !important; }
+
+        /* ── 네비게이션 ── */
+        body.dark nav { background: #0d1b2a !important; border-right: 1px solid #334155 !important; }
+        body.dark .nav-item:hover { background: #1e3a5f !important; }
+        body.dark .nav-group-header:hover { background: #1e3a5f !important; }
+
+        /* ── 섹션 라벨 ── */
+        body.dark [style*="color:var(--sub)"] { color: #94a3b8 !important; }
 
         /* ── 대기열 아코디언 ── */
         .qa-cat {
@@ -265,17 +398,6 @@
         .detail-field .df-label { font-size: 0.72rem; font-weight: 700; color: var(--sub); margin-bottom: 3px; }
         .detail-field .df-val { font-size: 0.88rem; font-weight: 600; color: var(--text); }
         .detail-field.full { grid-column: 1 / -1; }
-        body.dark .detail-field { background: #263548; }
-        body.dark .cat-cell { background: #1e293b; color: #94a3b8; border-right-color: #3b82f6; }
-        body.dark .device-cell { color: #e2e8f0; border-right-color: #334155; }
-        body.dark .queue-table td { border-bottom-color: #334155; }
-        body.dark .queue-item { border-bottom-color: #334155; }
-        body.dark .queue-name { color: #f1f5f9; }
-        body.dark .tag-idle { background: rgba(148,163,184,0.12); color: #94a3b8; border: 1px solid rgba(148,163,184,0.25); }
-        body.dark .tag-run  { background: rgba(52,211,153,0.12); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.25); }
-        body.dark .tag-good { background: rgba(52,211,153,0.12); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.25); }
-        body.dark .tag-warn { background: rgba(251,191,36,0.12); color: #fcd34d; border: 1px solid rgba(251,191,36,0.25); }
-        body.dark .tag-bad  { background: rgba(248,113,113,0.12); color: #fca5a5; border: 1px solid rgba(248,113,113,0.25); }
         /* 다크모드 토글 버튼 */
         #dark-toggle {
             position: fixed; top: 16px; right: 20px;
@@ -412,8 +534,8 @@
         .tag-bad  { background: #fee2e2; color: #991b1b; }
 
         /* ── 홈 대시보드 ── */
-        .dash-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-        .dash-card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; }
+        .dash-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; align-items: stretch; }
+        .dash-card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 6px; cursor: pointer; transition: 0.2s; border: 2px solid transparent; height: 100%; box-sizing: border-box; }
         .dash-card:hover { border-color: var(--accent); transform: translateY(-2px); }
         .dash-card .dc-icon { font-size: 1.6rem; }
         .dash-card .dc-num { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
@@ -501,10 +623,36 @@
     </style>
 </head>
 <body>
+<!-- ═══════ 로그인 화면 ═══════ -->
+<div id="login-screen">
+    <div class="login-box">
+        <div class="login-logo">KOR<span>ENS</span></div>
+        <div class="login-sub">통합 품질 관리 시스템 — 로그인이 필요합니다</div>
+        <div class="login-field">
+            <label>이메일</label>
+            <input type="email" id="login-email" placeholder="이메일 입력" onkeypress="if(event.key==='Enter')document.getElementById('login-pw').focus()">
+        </div>
+        <div class="login-field">
+            <label>비밀번호</label>
+            <input type="password" id="login-pw" placeholder="비밀번호 입력" onkeypress="if(event.key==='Enter')window._fbLogin(document.getElementById('login-email').value,document.getElementById('login-pw').value)">
+        </div>
+        <button class="login-btn" onclick="window._fbLogin(document.getElementById('login-email').value,document.getElementById('login-pw').value)">🔐 로그인</button>
+        <div id="login-error"></div>
+        <div style="margin-top:24px;font-size:0.75rem;color:#94a3b8;">접속 문의: 시스템 관리자에게 계정을 요청하세요</div>
+    </div>
+</div>
+
+<!-- ═══════ 메인 앱 ═══════ -->
+<div id="app-screen">
 
 <!-- ═══════════════════ 사이드바 ═══════════════════ -->
 <nav>
     <div class="nav-logo" onclick="showPage('home')" style="padding:16px 16px 12px;text-align:center;"><img src="data:image/png;base64,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" style="max-width:148px;height:auto;display:block;margin:0 auto 5px;border-radius:4px;" alt="KORENS"><span style="font-size:1.4rem;color:var(--accent);font-weight:600;letter-spacing:0.3px;">통합 품질 관리</span></div>
+        <div style="padding:6px 16px 10px;border-bottom:1px solid #2d3f55;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span style="font-size:0.7rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="user-email-display"></span>
+            <button onclick="window._fbLogout()" style="flex-shrink:0;background:#ef4444;border:none;color:#fff;padding:4px 10px;border-radius:6px;font-size:0.72rem;cursor:pointer;font-weight:600;">로그아웃</button>
+        </div>
+
 
     <!-- 홈 -->
     <div class="nav-item-top active" id="nav-home" onclick="showPage('home')">🏠 홈</div>
@@ -554,7 +702,7 @@
     <!-- 품질 Part -->
 
     <div style="font-size:0.78rem;font-weight:700;color:var(--sub);margin-bottom:8px;letter-spacing:1px;">📊 품질 / QUALITY</div>
-    <div class="dash-grid" style="margin-bottom:24px;">
+    <div class="dash-grid" style="margin-bottom:16px;">
         <div class="dash-card" onclick="showPage('cq')" style="flex-direction:column;align-items:flex-start;padding:20px;gap:0;">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;width:100%;">
                 <div style="font-size:1.8rem;line-height:1;flex-shrink:0;">📋</div>
@@ -598,7 +746,7 @@
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;width:100%;">
                 <div style="font-size:1.8rem;line-height:1;flex-shrink:0;">🧪</div>
                 <div>
-                    <div style="font-size:1.2rem;font-weight:700;color:var(--text);white-space:nowrap;">실험실</div>
+                    <div style="font-size:1.2rem;font-weight:700;color:var(--text);white-space:nowrap;">AI 스마트 실험실</div>
                     <div style="font-size:0.82rem;color:var(--sub);margin-top:2px;white-space:nowrap;">AI 스마트 실험실</div>
                 </div>
             </div>
@@ -613,7 +761,7 @@
     <div style="font-size:0.78rem;font-weight:700;color:var(--sub);margin-bottom:8px;letter-spacing:1px;">🏆 고객사 Score 현황</div>
    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:28px;align-items:stretch;">
         <div id="home-score-cards" style="display:contents;"></div>
-        <div id="home-score-ai" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;border-top:3px solid var(--accent2);cursor:pointer;min-width:0;box-sizing:border-box;" onclick="openAiScoreModal()">
+        <div id="home-score-ai" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;border-top:3px solid var(--accent2);cursor:pointer;min-width:0;box-sizing:border-box;height:100%;" onclick="openAiScoreModal()">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <div style="font-size:0.82rem;font-weight:700;">🤖 AI 스코어 분석</div>
                 <div id="home-score-ai-dots" style="display:flex;gap:4px;"></div>
@@ -1088,7 +1236,7 @@
         <div class="card-header"><h3>💰 원가 절감 실적 현황</h3><button class="btn btn-primary btn-sm" onclick="openCostModal()">+ 과제 등록</button></div>
         <div class="kpi-grid">
             <div class="kpi-box" style="position:relative;">
-                <div class="kpi-label">🎯 연간 목표 (억원)</div>
+                <div class="kpi-label">🎯 연간 목표 (만원)</div>
                 <div id="kpi-cost-goal-display" style="display:flex;align-items:center;justify-content:center;gap:8px;margin:6px 0 2px;">
                     <div class="kpi-val" id="kpi-cost-goal">-</div>
                     <button onclick="openCostGoalEdit()" title="목표 수정" style="background:none;border:none;cursor:pointer;color:var(--sub);font-size:0.9rem;padding:2px;">✏️</button>
@@ -1104,12 +1252,12 @@
                     </div>
                 </div>
             </div>
-            <div class="kpi-box"><div class="kpi-label">📈 현재 실적 (억원)</div><div class="kpi-val" id="kpi-cost-done" style="color:var(--accent2);">-</div></div>
+            <div class="kpi-box"><div class="kpi-label">📈 현재 실적</div><div class="kpi-val" id="kpi-cost-done" style="color:var(--accent2);">-</div><div class="kpi-sub" id="kpi-cost-done-sub"></div></div>
             <div class="kpi-box"><div class="kpi-label">🏆 달성률</div><div class="kpi-val" id="kpi-cost-pct">-</div><div class="kpi-sub" id="kpi-cost-pct-sub"></div></div>
             <div class="kpi-box"><div class="kpi-label">📋 진행 과제 수</div><div class="kpi-val" id="kpi-cost-cnt">-</div></div>
         </div>
         <div class="card-body"><table class="data-table">
-            <thead><tr><th>과제명</th><th>담당부서</th><th>목표금액(억원)</th><th>실적금액(억원)</th><th>달성률</th><th>완료예정일</th><th>상태</th><th></th></tr></thead>
+            <thead><tr><th>과제명</th><th>담당부서</th><th>목표금액(만원)</th><th>실적금액(만원)</th><th>달성률</th><th>완료예정일</th><th>상태</th><th></th></tr></thead>
             <tbody id="tbody-cost"><tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr></tbody>
         </table></div>
     </div>
@@ -1486,10 +1634,10 @@
             <div class="form-group"><label>과제명</label><input type="text" id="cost-name" placeholder="과제명"></div>
             <div class="form-row">
                 <div class="form-group"><label>담당 부서</label><input type="text" id="cost-dept"></div>
-                <div class="form-group"><label>목표 금액 (원)</label><input type="number" id="cost-goal" placeholder="예) 48000000"></div>
+                <div class="form-group"><label>목표 금액 (만원)</label><input type="number" id="cost-goal" placeholder="0"></div>
             </div>
             <div class="form-row">
-                <div class="form-group"><label>실적 금액 (원)</label><input type="number" id="cost-done" placeholder="0"></div>
+                <div class="form-group"><label>실적 금액 (만원)</label><input type="number" id="cost-done" placeholder="0"></div>
                 <div class="form-group"><label>완료 예정일</label><input type="date" id="cost-date"></div>
             </div>
             <div class="form-group"><label>상태</label>
@@ -1553,14 +1701,6 @@
         <div class="modal-footer"><button class="btn btn-gray" onclick="closeModal('insp-modal')">취소</button><button class="btn btn-primary" onclick="saveInsp()">저장</button></div>
     </div>
 </div>
-
-<!-- Firebase 로딩 배너 -->
-<div id="fb-loading-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#1a2535;color:#fff;padding:12px 24px;align-items:center;gap:12px;font-size:0.88rem;font-weight:600;box-shadow:0 2px 12px rgba(0,0,0,0.3);">
-    <span style="animation:spin 1s linear infinite;display:inline-block;font-size:1.1rem;">🔄</span>
-    Firebase에서 최신 데이터를 불러오는 중...
-    <span style="font-size:0.75rem;font-weight:400;color:#94a3b8;">잠시만 기다려 주세요</span>
-</div>
-<style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 
 <!-- 다크모드 토글 버튼 -->
 <button id="dark-toggle" onclick="toggleDark()">🌙 다크 모드</button>
@@ -1980,11 +2120,31 @@ let costData   = JSON.parse(localStorage.getItem('korens_cost')       || '[]');
 let ailabData  = JSON.parse(localStorage.getItem('korens_ailab')      || '[]');
 let inspData   = JSON.parse(localStorage.getItem('korens_insp')       || '[]');
 
+// ══════════════════════════════════════════════════════
+// 전역 목표 상수 (여기서만 수정하면 전체에 반영됨)
+// ══════════════════════════════════════════════════════
+const BIZ_GOAL_MAN   = 750000;    // TEST 사업화 연간 목표 (만원): 75억
+const BIZ_GOAL_OK_PCT = 80;       // 사업화 순항 기준 (%)
+const COST_OK_PCT     = 70;       // 원가절감 순항 기준 (%)
+const COST_DONE_PCT   = 100;      // 원가절감 달성 기준 (%)
+const CUST_COLOR_MAP  = {         // 고객사별 고정 색상
+    'HKMC':            '#3b82f6',
+    'BMW':             '#10b981',
+    'FORD':            '#f59e0b',
+    'Stellantis(FCA)': '#ef4444',
+    'JLR':             '#8b5cf6',
+};
+function getCustColor(cust, fallbackIdx) {
+    const fb = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+    return CUST_COLOR_MAP[cust] || fb[fallbackIdx % fb.length];
+}
+// 원가절감 연간 목표는 localStorage에서 관리 (별도 설정 UI 연동)
+// costAnnualGoal 변수는 renderCost() 근처에 선언됨
+
 function save() {
     localStorage.setItem('korens_tests',     JSON.stringify(tests));
     localStorage.setItem('korens_breakdown', JSON.stringify(breakdown));
     localStorage.setItem('korens_completed', JSON.stringify(completed));
-    // Firebase 동기화
     if (window._fbSet) {
         window._fbSet('korens_tests',     tests);
         window._fbSet('korens_breakdown', breakdown);
@@ -2003,13 +2163,14 @@ function saveAll() {
     localStorage.setItem('korens_cost',  JSON.stringify(costData));
     localStorage.setItem('korens_ailab', JSON.stringify(ailabData));
     localStorage.setItem('korens_insp',  JSON.stringify(inspData));
-    // Firebase 동기화
     if (window._fbSet) {
         window._fbSet('korens_cq',    cqData);
         window._fbSet('korens_4m',    data4m);
         window._fbSet('korens_cost',  costData);
         window._fbSet('korens_ailab', ailabData);
         window._fbSet('korens_insp',  inspData);
+        const dv = localStorage.getItem('korens_demo_loaded');
+        if (dv) window._fbSet('korens_demo_loaded', dv);
     }
 }
 
@@ -2325,11 +2486,6 @@ function saveCqData() {
     form.fields.forEach(f => { row[f.id] = document.getElementById(f.id)?.value || ''; });
     cqData[currentCqType].push(row);
     saveAll(); renderCq(); closeModal('cq-modal');
-    // 입력값 초기화
-    form.fields.forEach(f => {
-        const el = document.getElementById(f.id);
-        if (el && el.tagName !== 'SELECT') el.value = '';
-    });
 }
 
 // ═══════════════════════════════════════════
@@ -2353,10 +2509,8 @@ function save4m() {
 // 원가 절감 저장
 // ═══════════════════════════════════════════
 function saveCost() {
-    const name = document.getElementById('cost-name').value.trim();
-    if (!name) return alert('과제명을 입력하세요.');
     costData.push({
-        name,
+        name:   document.getElementById('cost-name').value,
         dept:   document.getElementById('cost-dept').value,
         goal:   parseFloat(document.getElementById('cost-goal').value)||0,
         done:   parseFloat(document.getElementById('cost-done').value)||0,
@@ -2364,38 +2518,32 @@ function saveCost() {
         status: document.getElementById('cost-status').value
     });
     saveAll(); renderCost(); closeModal('cost-modal');
-    ['cost-name','cost-dept','cost-goal','cost-done','cost-date'].forEach(id => document.getElementById(id).value = '');
 }
 
 // ═══════════════════════════════════════════
 // AI 실험실 저장
 // ═══════════════════════════════════════════
 function saveAilab() {
-    const name = document.getElementById('lab-name').value.trim();
-    if (!name) return alert('과제명을 입력하세요.');
-    const start  = document.getElementById('lab-start').value;
-    const end    = document.getElementById('lab-end').value;
-    const status = document.getElementById('lab-status').value;
-    // 진행률: 완료면 100, 계획이면 0, 진행중이면 날짜로 자동계산
-    let pct = parseInt(document.getElementById('lab-pct').value) || 0;
-    if (status === '완료') pct = 100;
-    else if (status === '계획') pct = 0;
-    else if (start && end) pct = Math.min(100, Math.max(0, calcProgress(start, end) || pct));
-    ailabData.push({ name, owner: document.getElementById('lab-owner').value, pct, start, end, status, note: document.getElementById('lab-note').value });
+    ailabData.push({
+        name:   document.getElementById('lab-name').value,
+        owner:  document.getElementById('lab-owner').value,
+        pct:    parseInt(document.getElementById('lab-pct').value)||0,
+        start:  document.getElementById('lab-start').value,
+        end:    document.getElementById('lab-end').value,
+        status: document.getElementById('lab-status').value,
+        note:   document.getElementById('lab-note').value
+    });
     saveAll(); renderAilab(); closeModal('ailab-modal');
-    ['lab-name','lab-owner','lab-pct','lab-start','lab-end','lab-note'].forEach(id => document.getElementById(id).value = '');
 }
 
 // ═══════════════════════════════════════════
 // 정기신뢰성검사 저장
 // ═══════════════════════════════════════════
 function saveInsp() {
-    const item = document.getElementById('insp-item').value.trim();
-    if (!item) return alert('검사 항목을 입력하세요.');
     inspData.push({
         year:    parseInt(document.getElementById('insp-year').value),
         month:   parseInt(document.getElementById('insp-month-sel').value),
-        item,
+        item:    document.getElementById('insp-item').value,
         target:  document.getElementById('insp-target').value,
         planDate:document.getElementById('insp-plan-date').value,
         doneDate:document.getElementById('insp-done-date').value,
@@ -2403,7 +2551,6 @@ function saveInsp() {
         result:  document.getElementById('insp-result').value
     });
     saveAll(); renderInspection(); closeModal('insp-modal');
-    ['insp-item','insp-target','insp-plan-date','insp-done-date','insp-owner'].forEach(id => document.getElementById(id).value = '');
 }
 
 // ═══════════════════════════════════════════
@@ -3546,12 +3693,11 @@ function renderHome() {
 
     // TEST 사업화 카드
     const bizTotal = bizData.reduce((s,r)=>s+(r.amount||0),0);
-    const bizGoal  = 100000; // 10억 목표 (만원 단위)
-    const bizPct   = Math.round(bizTotal/bizGoal*100);
+    const bizPct   = Math.round(bizTotal/BIZ_GOAL_MAN*100);
     const scNum = document.getElementById('dc-sc-num');
     const scLbl = document.getElementById('dc-sc-label');
     if (scNum) scNum.textContent = (bizTotal/10000).toFixed(1)+'억원';
-    if (scLbl) scLbl.innerHTML = `목표 ${(bizGoal/10000).toFixed(0)}억 대비 <b style="color:var(--warn);">${bizPct}%</b>`;
+    if (scLbl) scLbl.innerHTML = `목표 ${(BIZ_GOAL_MAN/10000).toFixed(0)}억 대비 <b style="color:var(--warn);">${bizPct}%</b>`;
 
     // ── 장비 가동 현황 - 카테고리별 가로 바 테이블
     const overallPct = allDevs.length ? Math.round(running/allDevs.length*100) : 0;
@@ -3648,7 +3794,9 @@ function renderHomeScoreCards() {
         if (!byCust[cust]) byCust[cust] = {rows:[], metric:r['cq-metric']||'', target:parseFloat(r['cq-target'])||85};
         const q=parseFloat(r['cq-s-quality'])||0, d=parseFloat(r['cq-s-delivery'])||0, rs=parseFloat(r['cq-s-response'])||0;
         const avgV = (q+d+rs)/3;
-        byCust[cust].rows.push({qtr:r['cq-quarter']||'', q, d, rs, avgV});
+        const passV = parseFloat(r['cq-pass'])||0;
+        byCust[cust].rows.push({qtr:r['cq-quarter']||'', q, d, rs, avgV, 'cq-pass': r['cq-pass']||''});
+        if (passV) byCust[cust].pass = passV;
         // 최신 데이터로 avgVal, q, d, rs 갱신 (AI 패널용)
         byCust[cust].avgVal = avgV;
         byCust[cust].q = q;
@@ -3656,78 +3804,129 @@ function renderHomeScoreCards() {
         byCust[cust].rs = rs;
     });
 
-    const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
+    // 고객사별 색상 명시 지정 (getCustColor 전역 함수 사용)
+    const CUST_COLORS = CUST_COLOR_MAP; // 전역 상수 참조 (하위 호환)
+
+    // 다크모드 여부 감지
+    const isDark = document.body.classList.contains('dark');
+    const subClr    = isDark ? '#94a3b8' : '#64748b';
+    const baseLineC = isDark ? '#334155' : '#e2e8f0';
+    const passLineC = isDark ? '#475569' : '#cbd5e1';
+    const passTextC = isDark ? '#64748b' : '#94a3b8';
+    const collecting_bg  = isDark ? '#1e293b' : '#f1f5f9';
+    const collecting_txt = isDark ? '#64748b' : '#94a3b8';
+    const yearTxtC  = isDark ? '#7dd3fc' : '#3b82f6';
 
     scoreCards.innerHTML = Object.entries(byCust).map(([cust, info], ci) => {
-        const color    = COLORS[ci % COLORS.length];
-        const isStar   = info.metric.includes('STAR');
-        const isLpkm   = info.metric.includes('LPKM');
-        const isScore1000 = info.metric.includes('Q1 Score');
-        const yMax     = isLpkm ? 5 : isScore1000 ? 1100 : null;
-        const targetV  = info.target;
-        const lastRow  = info.rows[info.rows.length-1];
-        const lastAvg  = lastRow ? lastRow.avgV : 0;
+        const color   = getCustColor(cust, ci);
+        const isStar  = info.metric === 'STAR';
+        const isFloat = info.metric.includes('LPKM') || isStar;
+        const targetV = info.target;
+        const passV   = parseFloat(info.pass||0);
 
-        // HKMC(STAR): 2026년 집계중 처리
-        const isPending = isStar;
-        const isGood   = isPending ? true : lastAvg >= targetV;
-        const statusClr = isPending ? '#6366f1' : isGood ? '#10b981' : '#f59e0b';
+        // ── 작년 / 올해 평균 계산 ──
+        const NOW = new Date();
+        const CUR_YEAR  = NOW.getFullYear();
+        const PREV_YEAR = CUR_YEAR - 1;
 
-        // 표시 점수
-        const avgStr = isPending ? '집계중' : (isLpkm ? lastAvg.toFixed(1) : Math.round(lastAvg).toString());
+        const prevRows = info.rows.filter(r=>(r.qtr||'').startsWith(String(PREV_YEAR)));
+        const curRows  = info.rows.filter(r=>(r.qtr||'').startsWith(String(CUR_YEAR)));
 
-        const hist = info.rows.slice(-6);
+        const avgArr = arr => arr.length ? arr.reduce((s,r)=>s+r.avgV,0)/arr.length : null;
+        const prevAvg = avgArr(prevRows);
+        const curAvg  = avgArr(curRows);
 
-        const minF = lastRow ? Math.min(lastRow.q, lastRow.d, lastRow.rs) : 0;
-        const minL = !lastRow ? '' : lastRow.q===minF?'품질':lastRow.d===minF?'납기':'대응';
-        const comment = isPending ? '📊 2026년 집계중' : isGood ? '✅ 목표 달성' : ('⚠️ '+minL+'점 개선 필요');
+        const isCollecting = curRows.length === 0;
 
-        // 합격선 라벨
-        const passLabel = isStar ? '목표 4.5★' : isScore1000 ? '합격 800' : '합격 '+info.target;
+        const displayAvg = isCollecting ? prevAvg : curAvg;
+        const isGood     = displayAvg !== null && displayAvg >= targetV;
+        const isPass     = !isGood && passV > 0 && displayAvg !== null && displayAvg >= passV;
+        const statusClr  = isCollecting ? (isDark?'#64748b':'#94a3b8') : (isGood ? '#10b981' : isPass ? '#f59e0b' : '#ef4444');
+        const scoreStr   = isCollecting ? '집계중' : (isFloat ? displayAvg.toFixed(1) : Math.round(displayAvg).toString());
+        const unitStr    = isStar ? '★' : '점';
+        const comment    = isCollecting ? '평가 집계중' : (isGood ? '✅ 목표 달성' : isPass ? '🟡 합격선 도달' : '⚠️ 개선 필요');
 
-        // SVG
-        const barW=36, barGap=7, svgH=110, padL=4, padB=20, padT=32;
-        const dataMax = yMax || Math.max(...hist.map(h=>h.avgV), targetV * 1.1, 1);
-        const svgW    = hist.length * (barW+barGap) + barGap + padL*2 + 38;
-        const chartH  = svgH - padB - padT;
-        const goalY   = padT + chartH - Math.round(targetV/dataMax*chartH);
+        // ── SVG 레이아웃: 통합 스케일 (막대와 목표선/합격선이 동일 좌표계) ──
+        const svgW   = 182, svgH = 110;
+        const padL   = 10,  padR  = 54;
+        const barW   = 46;
+        const chartW = svgW - padL - padR;
+        const gap    = chartW - barW * 2;
 
-        const goalLine =
-            '<line x1="'+padL+'" y1="'+goalY+'" x2="'+(svgW-38)+'" y2="'+goalY+
-            '" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>'+
-            '<text x="'+(svgW-36)+'" y="'+(goalY+4)+'" font-size="7.5" fill="#94a3b8" font-weight="bold">'+passLabel+'</text>';
+        const chartBottom = svgH - 18;  // 년도 라벨 공간
+        const chartTop    = 12;         // 상단 여백 (숫자 라벨용)
+        const chartH      = chartBottom - chartTop;
 
-        const bars = hist.map((h, bi) => {
-            const bh  = Math.max(Math.round(h.avgV/dataMax*chartH), 2);
-            const bx  = padL + barGap + bi*(barW+barGap);
-            const by  = padT + chartH - bh;
-            const bc  = isPending ? '#a5b4fc' : h.avgV >= targetV ? color : '#ef4444';
-            const ql  = (h.qtr||'').replace(/\d{4}-Q/,'Q');
-            const lbl = isLpkm ? h.avgV.toFixed(1) : Math.round(h.avgV).toString();
-            return '<rect x="'+bx+'" y="'+by+'" width="'+barW+'" height="'+bh+'" rx="4" fill="'+bc+'" opacity="0.9"/>'+
-                   '<text x="'+(bx+barW/2)+'" y="'+(by-5)+'" text-anchor="middle" font-size="10" fill="'+bc+'" font-weight="bold">'+(isPending?lbl+'★':lbl)+'</text>'+
-                   '<text x="'+(bx+barW/2)+'" y="'+(svgH-5)+'" text-anchor="middle" font-size="8" fill="#94a3b8">'+ql+'</text>';
-        }).join('');
+        // 통합 스케일: 막대 값, 목표값, 합격값을 모두 포함한 최대값
+        const allVals = [prevAvg, curAvg, targetV, passV > 0 ? passV : null].filter(v => v !== null && v > 0);
+        const dataMax = allVals.length ? Math.max(...allVals) * 1.12 : 1;
 
-        const svgTag = '<svg width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'" style="display:block;width:100%;overflow:visible;">'+goalLine+bars+'</svg>';
+        // Y좌표 변환 함수 (값 → SVG Y)
+        const toY = v => chartBottom - Math.round((v / dataMax) * chartH);
+        const toBarH = v => v !== null && v > 0 ? Math.max(chartBottom - toY(v), 4) : 0;
 
-        return '<div class="dash-card" style="flex-direction:column;align-items:flex-start;padding:14px 12px 12px;box-sizing:border-box;'+
-       'border-top:3px solid '+color+';border-left:none;gap:0;min-width:0;cursor:pointer;" '+
-               'border-top:3px solid '+color+';border-left:none;gap:0;min-width:0;cursor:pointer;" '+
-               'onclick="showPage(\'cq\');switchCqTab(\'score\');selectScoreCust(\''+cust+'\')">' +
-               // 회사명 + 점수 + 달성여부
-              '<div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%;margin-bottom:6px;gap:4px;">'+
-	      '<div style="font-size:0.88rem;font-weight:700;color:var(--text);padding-top:2px;min-width:0;word-break:break-all;">'+cust+'</div>'+
-              '<div style="text-align:right;flex-shrink:0;max-width:52%;">'+
-                  '<div style="font-size:1rem;font-weight:700;color:'+statusClr+';line-height:1.2;">'+
-                  (isPending ? '집계중' : avgStr + (isStar ? '★' : isLpkm ? '점' : isScore1000 ? '점' : '점'))+
-                  '</div>'+
-'<div style="font-size:0.62rem;font-weight:700;color:'+statusClr+';word-break:keep-all;line-height:1.3;margin-top:2px;">'+comment+'</div>'+
-                 '</div>'+
-               '</div>'+
-               // 그래프
-               svgTag+
-               '</div>';
+        const bh1 = toBarH(prevAvg);
+        const bh2 = toBarH(curAvg);
+        const bx1 = padL;
+        const bx2 = padL + barW + gap;
+        const by1 = chartBottom - bh1;
+        const by2 = chartBottom - bh2;
+
+        // 목표선 / 합격선 Y (통합 스케일)
+        const goalY = toY(targetV);
+        const passY = passV > 0 && passV !== targetV ? toY(passV) : null;
+
+        const bc1 = prevAvg !== null ? color : null;
+        const bc2 = curAvg  !== null ? color : null;
+
+        const lbl1 = prevAvg !== null ? (isFloat ? prevAvg.toFixed(1) : Math.round(prevAvg).toString()) : '-';
+        const lbl2 = isFloat ? (curAvg||0).toFixed(1) : Math.round(curAvg||0).toString();
+
+        const svgStr = `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="display:block;width:100%;overflow:visible;margin-top:4px;">
+          <!-- 바닥선 -->
+          <line x1="${padL}" y1="${chartBottom}" x2="${svgW-padR+2}" y2="${chartBottom}" stroke="${baseLineC}" stroke-width="1"/>
+          <!-- 합격선 (passV가 있을 때, 목표선 아래) -->
+          ${passY !== null ? `
+            <line x1="${padL}" y1="${passY}" x2="${svgW-padR}" y2="${passY}"
+              stroke="${passLineC}" stroke-width="1.5" stroke-dasharray="6,4"/>
+            <text x="${svgW-padR+3}" y="${passY+4}" font-size="8.5" fill="${passTextC}">합격${passV}</text>
+          ` : ''}
+          <!-- 목표선 -->
+          <line x1="${padL}" y1="${goalY}" x2="${svgW-padR}" y2="${goalY}"
+            stroke="${color}" stroke-width="2" stroke-dasharray="8,5"/>
+          <text x="${svgW-padR+3}" y="${goalY+4}" font-size="9" fill="${color}" font-weight="bold">목표${targetV}</text>
+          <!-- 막대1: 작년 -->
+          ${bc1 !== null ? `
+            <rect x="${bx1}" y="${by1}" width="${barW}" height="${bh1}" rx="5" fill="${bc1}"/>
+            <text x="${bx1+barW/2}" y="${by1-4}" text-anchor="middle" font-size="11" fill="${bc1}" font-weight="700">${lbl1}</text>
+          ` : `<text x="${bx1+barW/2}" y="${chartBottom-10}" text-anchor="middle" font-size="9" fill="${passTextC}">-</text>`}
+          <text x="${bx1+barW/2}" y="${svgH-4}" text-anchor="middle" font-size="9" fill="${subClr}" font-weight="600">${PREV_YEAR}년</text>
+          <!-- 막대2: 올해 -->
+          ${!isCollecting && bc2 !== null ? `
+            <rect x="${bx2}" y="${by2}" width="${barW}" height="${bh2}" rx="5" fill="${bc2}"/>
+            <text x="${bx2+barW/2}" y="${by2-4}" text-anchor="middle" font-size="11" fill="${bc2}" font-weight="700">${lbl2}</text>
+          ` : `
+            <rect x="${bx2}" y="${chartTop+20}" width="${barW}" height="${chartH-20}" rx="5" fill="${collecting_bg}" opacity="0.9"/>
+            <text x="${bx2+barW/2}" y="${chartTop+20+(chartH-20)/2+4}" text-anchor="middle" font-size="8.5" fill="${collecting_txt}">집계중</text>
+          `}
+          <text x="${bx2+barW/2}" y="${svgH-4}" text-anchor="middle" font-size="9" fill="${subClr}" font-weight="700">${CUR_YEAR}년</text>
+        </svg>`;
+
+        const passInfo = passV > 0 && passV !== targetV
+            ? `<span style="font-size:0.58rem;color:${passTextC};margin-left:2px;">합격:${passV}↑</span>` : '';
+
+        return `<div class="dash-card" style="flex-direction:column;align-items:flex-start;padding:12px 10px 8px;
+                box-sizing:border-box;border-top:3px solid ${color};gap:0;min-width:0;cursor:pointer;"
+                onclick="showPage('cq');switchCqTab('score');selectScoreCust('${cust}')">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%;margin-bottom:4px;gap:3px;">
+                <div style="font-size:0.78rem;font-weight:700;color:${color};padding-top:2px;min-width:0;word-break:break-word;flex:1;">${cust}</div>
+                <div style="text-align:right;flex-shrink:0;max-width:55%;">
+                    <div style="font-size:0.95rem;font-weight:700;color:${statusClr};line-height:1.2;white-space:nowrap;">${scoreStr}${isCollecting?'':unitStr}</div>
+                    <div style="font-size:0.62rem;font-weight:600;color:${statusClr};margin-top:2px;white-space:nowrap;">${isCollecting ? '평가 집계중' : (isGood ? '✅ 목표 달성' : isPass ? '🟡 합격선 도달' : '⚠️ 개선 필요')}</div>
+                </div>
+            </div>
+            ${svgStr}
+        </div>`;
     }).join('');
 
     renderAiScorePanel(byCust);
@@ -3737,18 +3936,26 @@ function renderAiScorePanel(byCustArg) {
     // AI 분석 패널 - 슬라이드 데이터 생성
     const custListLocal = Object.entries(byCustArg||{});
     const good = custListLocal.filter(([,i])=>i.avgVal>=i.target);
-    const bad  = custListLocal.filter(([,i])=>i.avgVal<i.target);
+    const pass = custListLocal.filter(([,i])=>i.avgVal<i.target && i.pass>0 && i.avgVal>=i.pass);
+    const bad  = custListLocal.filter(([,i])=>i.avgVal<i.target && !(i.pass>0 && i.avgVal>=i.pass));
     const _aiSlides = [];
-    // ⚠️ 미달 고객사 (각각 슬라이드)
+    // ⚠️ 목표 미달 + 합격선 미달 (개선 필요)
     bad.forEach(([cust, info]) => {
         const minF = Math.min(info.q||0, info.d||0, info.rs||0);
         const minL = info.q===minF?'품질':info.d===minF?'납기':'대응';
         _aiSlides.push(`<div style="width:100%;box-sizing:border-box;">
-            <div style="font-weight:700;color:#f59e0b;font-size:0.8rem;margin-bottom:4px;">⚠️ ${cust} — 주의 요망</div>
+            <div style="font-weight:700;color:#ef4444;font-size:0.8rem;margin-bottom:4px;">⚠️ ${cust} — 개선 필요</div>
             <div style="font-size:0.74rem;color:var(--text);line-height:1.5;">${minL}점(${minF.toFixed(1)}점) 집중 개선 필요.<br>T/F 가동 및 근본 원인 분석 권장.</div>
         </div>`);
     });
-    // ✅ 달성 고객사 (각각 슬라이드)
+    // 🟡 목표 미달이지만 합격선 도달
+    pass.forEach(([cust, info]) => {
+        _aiSlides.push(`<div style="width:100%;box-sizing:border-box;">
+            <div style="font-weight:700;color:#f59e0b;font-size:0.8rem;margin-bottom:4px;">🟡 ${cust} — 합격선 도달</div>
+            <div style="font-size:0.74rem;color:var(--text);line-height:1.5;">현재 ${info.avgVal.toFixed(0)}점 (합격 ${info.pass}). 목표 ${info.target}까지 추가 개선 권장.</div>
+        </div>`);
+    });
+    // ✅ 목표 달성
     good.forEach(([cust, info]) => {
         _aiSlides.push(`<div style="width:100%;box-sizing:border-box;">
             <div style="font-weight:700;color:#10b981;font-size:0.8rem;margin-bottom:4px;">✅ ${cust} — 목표 달성</div>
@@ -3900,10 +4107,7 @@ function open4mDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        data4m.splice(idx,1);
-        localStorage.setItem('korens_4m',JSON.stringify(data4m));
-        if (window._fbSet) window._fbSet('korens_4m', data4m);
-        render4m(); closeModal('cq-detail-modal');
+        data4m.splice(idx,1); localStorage.setItem('korens_4m',JSON.stringify(data4m)); render4m(); closeModal('cq-detail-modal');
     };
     _detailType='4m'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -3925,18 +4129,15 @@ function openCostDetail(idx) {
         ${I('name','과제명','text',r.name,true)}
         ${I('dept','담당 부서','text',r.dept)}
         ${I('status','상태','select',r.status,false,['진행중','완료','보류'])}
-        ${I('goal','목표 금액(원)','number',r.goal)}
-        ${I('done','실적 금액(원)','number',r.done)}
+        ${I('goal','목표 금액(만원)','number',r.goal)}
+        ${I('done','실적 금액(만원)','number',r.done)}
         ${I('date','완료 예정일','date',r.date,true)}
     </div>`;
     document.getElementById('cq-detail-title').textContent = '💰 원가 절감 — 상세 / 수정';
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        costData.splice(idx,1);
-        localStorage.setItem('korens_cost',JSON.stringify(costData));
-        if (window._fbSet) window._fbSet('korens_cost', costData);
-        renderCost(); closeModal('cq-detail-modal');
+        costData.splice(idx,1); localStorage.setItem('korens_cost',JSON.stringify(costData)); renderCost(); closeModal('cq-detail-modal');
     };
     _detailType='cost'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -3967,10 +4168,7 @@ function openAilabDetail(idx) {
     document.getElementById('cq-detail-body').innerHTML = body;
     document.getElementById('cq-detail-del-btn').onclick = () => {
         if (!confirm('삭제하시겠습니까?')) return;
-        ailabData.splice(idx,1);
-        localStorage.setItem('korens_ailab',JSON.stringify(ailabData));
-        if (window._fbSet) window._fbSet('korens_ailab', ailabData);
-        renderAilab(); closeModal('cq-detail-modal');
+        ailabData.splice(idx,1); localStorage.setItem('korens_ailab',JSON.stringify(ailabData)); renderAilab(); closeModal('cq-detail-modal');
     };
     _detailType='ailab'; _detailIdx=idx;
     document.getElementById('cq-detail-modal').classList.add('open');
@@ -3979,12 +4177,7 @@ function saveAilabDetail() {
     const r=ailabData[_detailIdx]; if(!r) return;
     const g=id=>{ const el=document.getElementById('de-'+id); return el?el.value:''; };
     r.name=g('name'); r.owner=g('owner'); r.status=g('status');
-    r.start=g('start'); r.end=g('end'); r.note=g('note');
-    // 진행률 자동 계산
-    if (r.status === '완료') r.pct = 100;
-    else if (r.status === '계획') r.pct = 0;
-    else if (r.start && r.end) r.pct = Math.min(100, Math.max(0, calcProgress(r.start, r.end) || parseInt(g('pct')) || 0));
-    else r.pct = parseInt(g('pct')) || 0;
+    r.pct=parseInt(g('pct'))||0; r.start=g('start'); r.end=g('end'); r.note=g('note');
     localStorage.setItem('korens_ailab',JSON.stringify(ailabData));
     if (window._fbSet) window._fbSet('korens_ailab', ailabData);
     renderAilab(); closeModal('cq-detail-modal');
@@ -4065,14 +4258,13 @@ function renderCq() {
             byCust2[cust].push({m:r['cq-month']||'',pct,prod,def,note:r['cq-note']||''});
         });
         const custListI = Object.keys(byCust2);
-        const colorsI = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
         const selCustI = window._inlineCustFilter||'';
 
         // 고객사 버튼 렌더
         const btnsElI = document.getElementById('inline-cust-btns');
         if (btnsElI) {
             btnsElI.innerHTML = custListI.map((c,ci) => {
-                const clr = colorsI[ci%colorsI.length];
+                const clr = getCustColor(c, ci);
                 const isSel = selCustI===c;
                 const rows = byCust2[c];
                 const lastPct = rows.length ? rows[rows.length-1].pct : 0;
@@ -4093,7 +4285,7 @@ function renderCq() {
             if (detailElI) detailElI.style.display = 'block';
             if (totalWrapI) totalWrapI.style.display = 'none';
             const ci = custListI.indexOf(selCustI);
-            const clr = colorsI[ci%colorsI.length];
+            const clr = getCustColor(selCustI, ci);
             const rowsRaw = byCust2[selCustI];
             const titleElI = document.getElementById('inline-cust-title');
             if (titleElI) titleElI.innerHTML = `<span style="color:${clr};">■ ${selCustI}</span> — 월별 Inline 불량률 <span style="font-size:0.75rem;color:var(--sub);">목표: 0.5% 이하</span>`;
@@ -4152,11 +4344,17 @@ function renderCq() {
         const q=parseFloat(r['cq-s-quality'])||0, d=parseFloat(r['cq-s-delivery'])||0, res=parseFloat(r['cq-s-response'])||0;
         const avg=((q+d+res)/3).toFixed(1);
         totalScore+=parseFloat(avg);
-        const judge=parseFloat(avg)>=85?'<span class="status-tag tag-good">달성</span>':'<span class="status-tag tag-warn">미달</span>';
         const metric = r['cq-metric']||'점수';
-        const target = r['cq-target']||'85';
-        const isGoal = parseFloat(avg)>=parseFloat(target);
-        const judgeScore = isGoal?'<span class="status-tag tag-good">달성</span>':'<span class="status-tag tag-warn">미달</span>';
+        const target = parseFloat(r['cq-target']||'85');
+        const pass   = parseFloat(r['cq-pass']||'0');
+        const avgF   = parseFloat(avg);
+        const isGoal = avgF >= target;
+        const isPassLine = !isGoal && pass > 0 && avgF >= pass;
+        const judgeScore = isGoal
+            ? '<span class="status-tag tag-good">목표 달성</span>'
+            : isPassLine
+            ? '<span class="status-tag tag-warn">합격선 도달</span>'
+            : '<span class="status-tag tag-bad">개선 필요</span>';
         scoreRows+=`<tr style="cursor:pointer;" onclick="openCqDetail('score',${i})">
             <td>${r['cq-customer']||'-'}</td>
             <td>${metric}</td>
@@ -4171,7 +4369,26 @@ function renderCq() {
     });
     document.getElementById('tbody-score').innerHTML=scoreRows||'<tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr>';
     document.getElementById('kpi-score-avg').textContent=scores.length?(totalScore/scores.length).toFixed(1):'-';
-    document.getElementById('kpi-score-goal').textContent=scores.length?(totalScore/scores.length>=85?'✅ 달성':'❌ 미달'):'-';
+    // 고객사별 목표·합격선을 각각 비교해 전체 상태 판정
+    if (scores.length) {
+        const byCustKpi = {};
+        scores.forEach(r => {
+            const c = r['cq-customer']||'?';
+            if (!byCustKpi[c]) byCustKpi[c] = {sum:0,cnt:0,target:parseFloat(r['cq-target'])||85,pass:parseFloat(r['cq-pass'])||0};
+            const q=parseFloat(r['cq-s-quality'])||0,d=parseFloat(r['cq-s-delivery'])||0,rs=parseFloat(r['cq-s-response'])||0;
+            byCustKpi[c].sum += (q+d+rs)/3; byCustKpi[c].cnt++;
+        });
+        const results = Object.values(byCustKpi).map(v => {
+            const avg = v.sum/v.cnt;
+            return avg>=v.target?'good': (v.pass>0&&avg>=v.pass)?'pass':'bad';
+        });
+        const allGood = results.every(r=>r==='good');
+        const anyBad  = results.some(r=>r==='bad');
+        document.getElementById('kpi-score-goal').textContent =
+            allGood ? '✅ 전체 달성' : anyBad ? '⚠️ 개선 필요' : '🟡 합격선 도달';
+    } else {
+        document.getElementById('kpi-score-goal').textContent = '-';
+    }
     document.getElementById('kpi-score-cnt').textContent=scores.length||'-';
 
     // ── Score 고객사 버튼 + 상세 렌더 (1~12월 전체 표시)
@@ -4180,27 +4397,29 @@ function renderCq() {
         const byCustScore = {};
         allScores.forEach(r => {
             const cust=r['cq-customer']||'?';
-            if(!byCustScore[cust]) byCustScore[cust]={rows:[],metric:r['cq-metric']||'',target:parseFloat(r['cq-target'])||85};
+            if(!byCustScore[cust]) byCustScore[cust]={rows:[],metric:r['cq-metric']||'',target:parseFloat(r['cq-target'])||85,pass:parseFloat(r['cq-pass'])||0};
             const q2=parseFloat(r['cq-s-quality'])||0,d2=parseFloat(r['cq-s-delivery'])||0,rs2=parseFloat(r['cq-s-response'])||0;
+            if(r['cq-pass']) byCustScore[cust].pass = parseFloat(r['cq-pass'])||0;
             byCustScore[cust].rows.push({q:r['cq-quarter']||'',q1:q2,d:d2,rs:rs2,avg:(q2+d2+rs2)/3});
         });
         const custList3 = Object.keys(byCustScore);
-        const sColors=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
         const selCust = window._scoreCustFilter||'';
 
         const btnsEl = document.getElementById('score-cust-btns');
         if (btnsEl) {
             btnsEl.innerHTML = custList3.map((c,ci) => {
                 const info = byCustScore[c];
-                const clr = sColors[ci%sColors.length];
+                const clr = getCustColor(c, ci);
                 const lastAvg = info.rows.length ? info.rows[info.rows.length-1].avg : 0;
                 const isGood = lastAvg >= info.target;
+                const isPassBtn = !isGood && info.pass > 0 && lastAvg >= info.pass;
+                const icon = isGood ? '✅' : isPassBtn ? '🟡' : '⚠️';
                 const isSel = selCust===c;
                 return `<button onclick="selectScoreCust('${c}')"
                     style="padding:7px 16px;border-radius:20px;border:2px solid ${clr};
                     background:${isSel?clr:'transparent'};color:${isSel?'#fff':clr};
                     font-size:0.82rem;font-weight:700;cursor:pointer;transition:0.15s;display:inline-flex;align-items:center;gap:5px;">
-                    ${c} <span style="font-size:0.75rem;">${isGood?'✅':'⚠️'}</span>
+                    ${c} <span style="font-size:0.75rem;">${icon}</span>
                 </button>`;
             }).join('');
         }
@@ -4209,11 +4428,11 @@ function renderCq() {
         if (selCust && byCustScore[selCust]) {
             if (detailEl) detailEl.style.display = 'block';
             const ci = custList3.indexOf(selCust);
-            const clr = sColors[ci%sColors.length];
+            const clr = getCustColor(selCust, ci);
             const info = byCustScore[selCust];
             const tgt = info.target;
             const titleEl = document.getElementById('score-cust-title');
-            if (titleEl) titleEl.innerHTML = `<span style="color:${clr};">■ ${selCust}</span> — ${info.metric} 점수 추이 &nbsp;<span style="font-size:0.75rem;color:var(--sub);">목표: ${tgt} 이상</span>`;
+            if (titleEl) titleEl.innerHTML = `<span style="color:${clr};">■ ${selCust}</span> — ${info.metric} 점수 추이 &nbsp;<span style="font-size:0.75rem;color:${clr};font-weight:700;">목표: ${tgt} 이상</span>${info.pass&&info.pass!==tgt?` <span style="font-size:0.72rem;color:#94a3b8;">| 합격선: ${info.pass}</span>`:''}`;
 
             // 현재 연도 + 월 기준으로 표시 (미래 달 제외)
             const NOW = new Date();
@@ -4239,33 +4458,46 @@ function renderCq() {
                 }
             }
             const hasAnyVal = SHOW_MONTHS.some(d=>monthVals[d.key]!==undefined);
-            const maxV = hasAnyVal ? Math.max(...SHOW_MONTHS.map(d=>monthVals[d.key]||0), tgt, 1)*1.15 : tgt*1.2;
-            const svgW = SHOW_MONTHS.length*58+60, svgH = 190;
+            const passV2 = info.pass||0;
+            const maxV = hasAnyVal ? Math.max(...SHOW_MONTHS.map(d=>monthVals[d.key]||0), tgt, passV2, 1)*1.30 : tgt*1.35;
+            const svgW = SHOW_MONTHS.length*58+80, svgH = 220;
             const bW = 36;
-            const goalY = svgH-55-Math.round(tgt/maxV*(svgH-85));
+            const chartBottom = svgH - 55;
+            const chartTop    = 42;
+            const chartH      = chartBottom - chartTop;
+            const goalY = chartBottom - Math.round(tgt/maxV*chartH);
+            const passY2 = passV2 > 0 && passV2 !== tgt ? chartBottom - Math.round(passV2/maxV*chartH) : null;
             // 연도 구분선 위치
             const yearBreak = SHOW_MONTHS.findIndex(d=>d.y===CUR_YEAR);
             const svgStr = '<svg width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'" style="overflow:visible;">' +
-                // 목표선
-                '<line x1="20" y1="'+goalY+'" x2="'+(svgW-70)+'" y2="'+goalY+'" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,3"/>'+
-                '<text x="'+(svgW-65)+'" y="'+(goalY+4)+'" font-size="10" fill="#94a3b8" font-weight="bold">목표 '+tgt+'</text>'+
+                // 바닥선
+                '<line x1="20" y1="'+chartBottom+'" x2="'+(svgW-82)+'" y2="'+chartBottom+'" stroke="#e2e8f0" stroke-width="1"/>'+
+                // 합격선 (회색)
+                (passY2!==null?'<line x1="20" y1="'+passY2+'" x2="'+(svgW-82)+'" y2="'+passY2+'" stroke="#cbd5e1" stroke-width="1.2" stroke-dasharray="4,3"/>'+
+                '<text x="'+(svgW-78)+'" y="'+(passY2+4)+'" font-size="10" fill="#94a3b8">합격 '+passV2+'</text>':'')+
+                // 목표선 (강조색, 선명하게)
+                '<line x1="20" y1="'+goalY+'" x2="'+(svgW-82)+'" y2="'+goalY+'" stroke="'+clr+'" stroke-width="2" stroke-dasharray="6,3"/>'+
+                '<text x="'+(svgW-78)+'" y="'+(goalY+4)+'" font-size="10" fill="'+clr+'" font-weight="bold">목표 '+tgt+'</text>'+
                 // 연도 구분선
-                (yearBreak>0?'<line x1="'+(20+yearBreak*58-8)+'" y1="10" x2="'+(20+yearBreak*58-8)+'" y2="'+(svgH-45)+'" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="3,2"/>'+
-                '<text x="'+(20+yearBreak*58-6)+'" y="20" font-size="9" fill="#94a3b8">'+(CUR_YEAR)+'년→</text>':'')+
+                (yearBreak>0?'<line x1="'+(20+yearBreak*58-8)+'" y1="'+chartTop+'" x2="'+(20+yearBreak*58-8)+'" y2="'+(chartBottom)+'" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="3,2"/>'+
+                '<text x="'+(20+yearBreak*58-6)+'" y="'+(chartTop-4)+'" font-size="9" fill="#94a3b8">'+(CUR_YEAR)+'년→</text>':'')+
                 SHOW_MONTHS.map((d,bi)=>{
                     const val = monthVals[d.key];
                     const bx = 20+bi*58;
-                    const by = svgH-55;
                     const hasData = val !== undefined;
                     const isGood2 = hasData && val>=tgt;
-                    const bc = isGood2?clr:'#ef4444';
+                    const isMid = hasData && !isGood2 && passV2>0 && val>=passV2;
+                    const bc = isGood2 ? clr : (isMid ? '#f59e0b' : '#ef4444');
                     // 연도 라벨 (연도 첫 달)
                     const isFirstOfYear = bi===0 || SHOW_MONTHS[bi-1].y!==d.y;
                     const yearLabelSvg = isFirstOfYear?'<text x="'+bx+'" y="'+(svgH-8)+'" font-size="8" fill="#3b82f6" font-weight="bold">'+d.y+'</text>':'';
                     if (hasData) {
-                        const h = Math.max(Math.round(val/maxV*(svgH-85)),3);
-                        return '<rect x="'+bx+'" y="'+(by-h)+'" width="'+bW+'" height="'+h+'" rx="3" fill="'+bc+'" opacity="0.9"/>'+
-                            '<text x="'+(bx+bW/2)+'" y="'+(by-h-5)+'" text-anchor="middle" font-size="10" fill="'+bc+'" font-weight="bold">'+val.toFixed(1)+'</text>'+
+                        const h = Math.max(Math.round(val/maxV*chartH), 3);
+                        const barTop = chartBottom - h;
+                        const dispVal = info.metric&&(info.metric.includes('LPKM')||info.metric==='STAR') ? val.toFixed(1) : Math.round(val).toString();
+                        // 숫자는 막대 위 8px, 목표선과 겹치지 않도록 충분한 간격
+                        return '<rect x="'+bx+'" y="'+barTop+'" width="'+bW+'" height="'+h+'" rx="3" fill="'+bc+'"/>'+
+                            '<text x="'+(bx+bW/2)+'" y="'+(barTop-12)+'" text-anchor="middle" font-size="10" fill="'+bc+'" font-weight="bold">'+dispVal+'</text>'+
                             '<text x="'+(bx+bW/2)+'" y="'+(svgH-38)+'" text-anchor="middle" font-size="8" fill="#94a3b8">'+d.m+'월</text>'+
                             yearLabelSvg;
                     } else {
@@ -4643,14 +4875,21 @@ function saveCostAnnualGoal() {
 }
 
 function renderCost() {
-    const toOk = v => (v/100000000).toFixed(2) + '억';
     let doneTotal=0, rows='';
     costData.forEach((r,i)=>{
         doneTotal+=r.done;
         const pct=r.goal>0?Math.round(r.done/r.goal*100)+'%':'-';
         const sc=r.status==='완료'?'tag-good':r.status==='보류'?'tag-bad':'tag-warn';
+        const goalDisp = r.goal >= 100000000
+            ? `<div style="font-weight:700;">${(r.goal/100000000).toFixed(2)}억원</div><div style="font-size:0.7rem;color:var(--sub);">(${r.goal.toLocaleString()}원)</div>`
+            : `<div style="font-weight:700;">${(r.goal/10000).toFixed(0)}만원</div><div style="font-size:0.7rem;color:var(--sub);">(${r.goal.toLocaleString()}원)</div>`;
+        const doneDisp = r.done >= 100000000
+            ? `<div style="font-weight:700;color:var(--accent2);">${(r.done/100000000).toFixed(2)}억원</div><div style="font-size:0.7rem;color:var(--sub);">(${r.done.toLocaleString()}원)</div>`
+            : r.done > 0
+            ? `<div style="font-weight:700;color:var(--accent2);">${(r.done/10000).toFixed(0)}만원</div><div style="font-size:0.7rem;color:var(--sub);">(${r.done.toLocaleString()}원)</div>`
+            : `<div style="color:var(--sub);">-</div>`;
         rows+=`<tr style="cursor:pointer;" onclick="openCostDetail(${i})">
-            <td>${r.name}</td><td>${r.dept}</td><td>${toOk(r.goal)}</td><td>${toOk(r.done)}</td><td>
+            <td>${r.name}</td><td>${r.dept}</td><td>${goalDisp}</td><td>${doneDisp}</td><td>
             <div class="progress-wrap"><div class="progress-bar progress-running" style="width:${Math.min(r.goal>0?r.done/r.goal*100:0,100)}%"></div></div>
             <div class="queue-pct">${pct}</div></td><td>${fmtDate(r.date)}</td><td><span class="status-tag ${sc}">${r.status}</span></td>
             <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px;">
@@ -4659,13 +4898,22 @@ function renderCost() {
             </div></td></tr>`;
     });
     document.getElementById('tbody-cost').innerHTML=rows||'<tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr>';
+    // 연간 목표: 별도 저장값 우선, 없으면 과제 합산
     const goalToShow = costAnnualGoal > 0 ? costAnnualGoal : costData.reduce((s,r)=>s+r.goal,0);
     const pctVal = goalToShow > 0 ? Math.round(doneTotal / goalToShow * 100) : 0;
-    document.getElementById('kpi-cost-goal').textContent = toOk(goalToShow);
-    document.getElementById('kpi-cost-done').textContent = toOk(doneTotal);
+    const fmtAmt = v => v >= 100000000
+        ? `${(v/100000000).toFixed(2)}억`
+        : v >= 10000
+        ? `${(v/10000).toFixed(0)}만`
+        : v.toLocaleString();
+    const fmtAmtSub = v => v > 0 ? `(${v.toLocaleString()}원)` : '';
+    document.getElementById('kpi-cost-goal').textContent = fmtAmt(goalToShow);
+    document.getElementById('kpi-cost-done').textContent = fmtAmt(doneTotal);
+    const doneSub = document.getElementById('kpi-cost-done-sub');
+    if (doneSub) doneSub.textContent = fmtAmtSub(doneTotal);
     document.getElementById('kpi-cost-pct').textContent = goalToShow > 0 ? pctVal + '%' : '-';
     const sub = document.getElementById('kpi-cost-pct-sub');
-    if (sub) sub.textContent = goalToShow > 0 ? (pctVal >= 100 ? '✅ 목표 달성!' : pctVal >= 70 ? '📈 순항 중' : '⚠️ 목표 미달') : '';
+    if (sub) sub.textContent = goalToShow > 0 ? (pctVal >= COST_DONE_PCT ? '✅ 목표 달성!' : pctVal >= COST_OK_PCT ? '📈 순항 중' : '⚠️ 목표 미달') : '';
     document.getElementById('kpi-cost-cnt').textContent = costData.length;
 }
 
@@ -4673,35 +4921,29 @@ function renderCost() {
 // 렌더 - AI 실험실
 // ═══════════════════════════════════════════
 function renderAilab() {
-    // 렌더할 때마다 진행중 항목의 진행률을 날짜 기반으로 자동 갱신
-    ailabData.forEach(r => {
-        if (r.status === '완료') r.pct = 100;
-        else if (r.status === '계획') r.pct = 0;
-        else if (r.start && r.end) {
-            const auto = calcProgress(r.start, r.end);
-            if (auto !== null) r.pct = auto;
-        }
-    });
-    const done=ailabData.filter(r=>r.status==='완료').length;
-    const run=ailabData.filter(r=>r.status==='진행중').length;
-    const avgPct=ailabData.length?Math.round(ailabData.reduce((s,r)=>s+r.pct,0)/ailabData.length):0;
-    let rows='';
-    ailabData.forEach((r,i)=>{
-        const sc=r.status==='완료'?'tag-good':r.status==='계획'?'tag-idle':'tag-warn';
-        rows+=`<tr style="cursor:pointer;" onclick="openAilabDetail(${i})">
+    const done = ailabData.filter(r => r.status === '완료').length;
+    const run = ailabData.filter(r => r.status === '진행중').length;
+    
+    // [수정] 단순 pct 평균이 아니라, 전체 과제 중 '완료' 상태인 과제의 비율로 계산합니다.
+    const avgPct = ailabData.length ? Math.round((done / ailabData.length) * 100) : 0;
+    
+    let rows = '';
+    ailabData.forEach((r, i) => {
+        const sc = r.status === '완료' ? 'tag-good' : r.status === '계획' ? 'tag-idle' : 'tag-warn';
+        rows += `<tr style="cursor:pointer;" onclick="openAilabDetail(${i})">
             <td>${r.name}</td><td>${r.owner}</td><td>${fmtDate(r.start)}</td><td>${fmtDate(r.end)}</td><td>
             <div class="progress-wrap"><div class="progress-bar progress-running" style="width:${r.pct}%"></div></div>
-            <div class="queue-pct">${r.pct}%</div></td><td><span class="status-tag ${sc}">${r.status}</span></td><td>${r.note||'-'}</td>
+            <div class="queue-pct">${r.pct}%</div></td><td><span class="status-tag ${sc}">${r.status}</span></td><td>${r.note || '-'}</td>
             <td onclick="event.stopPropagation()"><div style="display:flex;gap:4px;">
                 <button class="btn btn-sm btn-gray" onclick="openAilabDetail(${i})">상세</button>
-                <button class="btn btn-sm btn-danger" onclick="removeRow(ailabData,${i},'korens_ailab',renderAilab)">삭제</button>
+                <button class="btn btn-sm btn-danger" onclick="removeRow(ailabData, ${i}, 'korens_ailab', renderAilab)">삭제</button>
             </div></td></tr>`;
     });
-    document.getElementById('tbody-ailab').innerHTML=rows||'<tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr>';
-    document.getElementById('kpi-lab-total').textContent=ailabData.length||'-';
-    document.getElementById('kpi-lab-done').textContent=done||'-';
-    document.getElementById('kpi-lab-run').textContent=run||'-';
-    document.getElementById('kpi-lab-pct').textContent=ailabData.length?avgPct+'%':'-';
+    document.getElementById('tbody-ailab').innerHTML = rows || '<tr><td colspan="8" style="text-align:center;color:#cbd5e1;padding:20px;">데이터가 없습니다</td></tr>';
+    document.getElementById('kpi-lab-total').textContent = ailabData.length || '-';
+    document.getElementById('kpi-lab-done').textContent = done || '-';
+    document.getElementById('kpi-lab-run').textContent = run || '-';
+    document.getElementById('kpi-lab-pct').textContent = ailabData.length ? avgPct + '%' : '-';
 }
 
 // ═══════════════════════════════════════════
@@ -5138,7 +5380,6 @@ function saveBiz() {
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
     if (window._fbSet) window._fbSet('korens_biz', bizData);
     renderBiz(); closeModal('biz-modal');
-    ['biz-customer','biz-item','biz-amount','biz-owner','biz-start','biz-end'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
 }
 
 let _bizEditIdx = -1;
@@ -5188,9 +5429,14 @@ function openAiScoreModal() {
     let html = '';
 
     Object.entries(byCust).forEach(([cust, info], ci) => {
-        const clr = sColors[ci%sColors.length];
+        const clr = getCustColor(cust, ci);
         const lastAvg = info.rows.length ? info.rows[info.rows.length-1].avg : 0;
+        const passLine = parseFloat(info.pass||0);
         const isGood = lastAvg >= info.target;
+        const isPassM = !isGood && passLine > 0 && lastAvg >= passLine;
+        const statusBg  = isGood ? '#dcfce7' : isPassM ? '#fef9c3' : '#fee2e2';
+        const statusClrM= isGood ? '#166534' : isPassM ? '#854d0e' : '#991b1b';
+        const statusTxt = isGood ? '✅ 목표 달성' : isPassM ? '🟡 합격선 도달' : '⚠️ 개선 필요';
         const minRow = info.rows[info.rows.length-1];
         const minF = minRow ? Math.min(minRow.q1, minRow.d, minRow.rs) : 0;
         const minL = !minRow ? '' : minRow.q1===minF?'품질점수':minRow.d===minF?'납기점수':'대응점수';
@@ -5202,11 +5448,11 @@ function openAiScoreModal() {
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                 <div>
                     <span style="font-size:1rem;font-weight:700;color:${clr};">${cust}</span>
-                    <span style="margin-left:8px;font-size:0.78rem;color:var(--sub);">${info.metric} · 목표: ${info.target}</span>
+                    <span style="margin-left:8px;font-size:0.78rem;color:var(--sub);">${info.metric} · 목표: ${info.target}${passLine>0&&passLine!==info.target?' · 합격선: '+passLine:''}</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;">
-                    <span style="font-size:1.4rem;font-weight:700;color:${isGood?clr:'#ef4444'};">${lastAvg.toFixed(1)}</span>
-                    <span style="padding:3px 10px;border-radius:99px;font-size:0.78rem;font-weight:700;background:${isGood?'#dcfce7':'#fee2e2'};color:${isGood?'#166534':'#991b1b'};">${isGood?'✅ 목표 달성':'⚠️ 목표 미달'}</span>
+                    <span style="font-size:1.4rem;font-weight:700;color:${isGood?clr:isPassM?'#f59e0b':'#ef4444'};">${lastAvg.toFixed(1)}</span>
+                    <span style="padding:3px 10px;border-radius:99px;font-size:0.78rem;font-weight:700;background:${statusBg};color:${statusClrM};">${statusTxt}</span>
                 </div>
             </div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px;">
@@ -5223,11 +5469,16 @@ function openAiScoreModal() {
                     <div style="font-size:0.9rem;font-weight:700;color:#f59e0b;">${minL||'-'}</div>
                 </div>
             </div>
-            ${!isGood ? `<div style="background:var(--card);border:1px solid #f59e0b;border-radius:8px;padding:10px;font-size:0.82rem;border-left:3px solid #f59e0b;">
-                <b style="color:#f59e0b;">⚠️ 주의 요망:</b> ${minL}(${minF}점) 집중 개선 필요.<br>
-                공정 T/F 가동 및 근본 원인(Root Cause) 분석을 통한 개선 대책 수립이 시급합니다.
-            </div>` : `<div style="background:var(--card);border:1px solid #10b981;border-radius:8px;padding:10px;font-size:0.82rem;border-left:3px solid #10b981;">
+            ${isGood ? `
+            <div style="background:var(--card);border:1px solid #10b981;border-radius:8px;padding:10px;font-size:0.82rem;border-left:3px solid #10b981;">
                 <b style="color:#10b981;">✅ 안정 유지:</b> 목표 달성 중. 현재 품질 레벨 유지 및 지속 모니터링 권장합니다.
+            </div>` : isPassM ? `
+            <div style="background:var(--card);border:1px solid #f59e0b;border-radius:8px;padding:10px;font-size:0.82rem;border-left:3px solid #f59e0b;">
+                <b style="color:#f59e0b;">🟡 합격선 도달:</b> 현재 합격선(${passLine})은 충족. 목표(${info.target})까지 ${(info.target-lastAvg).toFixed(1)}점 추가 향상 필요합니다.
+            </div>` : `
+            <div style="background:var(--card);border:1px solid #ef4444;border-radius:8px;padding:10px;font-size:0.82rem;border-left:3px solid #ef4444;">
+                <b style="color:#ef4444;">⚠️ 개선 필요:</b> ${minL}(${minF.toFixed(1)}점) 집중 개선 필요.<br>
+                공정 T/F 가동 및 근본 원인(Root Cause) 분석을 통한 개선 대책 수립이 시급합니다.
             </div>`}
         </div>`;
     });
@@ -5237,11 +5488,6 @@ function openAiScoreModal() {
     modal.classList.add('open');
 }
 
-function selectSupCust(cust) {
-    window._supCustFilter = cust;
-    // 테이블 필터도 적용
-    renderCq();
-}
 function selectInlineCust(cust) {
     window._inlineCustFilter = cust;
     renderCq();
@@ -5259,12 +5505,22 @@ function renderBiz() {
     const selYear = parseInt((document.getElementById('biz-year-sel')||{}).value||new Date().getFullYear());
     const filtered = bizData.filter(r=>r.year===selYear||!r.year);
     const total = filtered.reduce((s,r)=>s+(r.amount||0),0);
-    const goal  = 10000; // 만원 단위 10억
+    
+    // 1. 목표 금액 설정 (BIZ_GOAL_MAN 전역 상수 사용)
+    const goal  = BIZ_GOAL_MAN;
     const pct   = goal>0?Math.round(total/goal*100):0;
+    
     const set = (id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+    
     set('kpi-biz-total',(total/10000).toFixed(1));
+    
+    // 🔴 2. 이 코드를 추가해야 화면의 "10억"이 "75억"으로 바뀝니다.
+    set('kpi-biz-goal', (goal/10000) + '억'); 
+    
     set('kpi-biz-pct',pct);
     set('kpi-biz-cnt',filtered.length);
+    
+
 
     // 월별 차트
     const monthly={};
@@ -5308,7 +5564,10 @@ function renderBiz() {
         return `<tr>
             <td>${r.customer||'-'}</td>
             <td>${r.item}</td>
-            <td style="white-space:nowrap;font-weight:600;">${(r.amount||0).toLocaleString('ko-KR')}만원</td>
+            <td style="white-space:nowrap;">
+                <div style="font-weight:700;color:var(--accent2);">${((r.amount||0)/10000).toFixed(2)}억원</div>
+                <div style="font-size:0.72rem;color:var(--sub);">(${(r.amount||0).toLocaleString()}만원)</div>
+            </td>
             <td>${fmtDate(r.start)}</td>
             <td>${fmtDate(r.end)}</td>
             <td><span class="status-tag ${sc}">${r.status}</span></td>
@@ -5343,12 +5602,12 @@ const _cardMetrics = {
         () => { const tot=(cqData.inline||[]).length+(cqData.score||[]).length+(cqData.mail||[]).length+(cqData.supplier||[]).length+(cqData.deftype||[]).length+(cqData.incoming||[]).length+(cqData.process||[]).length; return {num:tot+'건', label:'전체 등록 건수'}; }
     ],
     sc: [
-        () => { const biz=JSON.parse(localStorage.getItem('korens_biz')||'[]'); const tot=biz.reduce((s,r)=>s+(r.amount||0),0); return {num:(tot/10000).toFixed(1)+'억', label:'누적 매출'}; },
-        () => { const biz=JSON.parse(localStorage.getItem('korens_biz')||'[]'); const done=biz.filter(r=>r.status==='완료').reduce((s,r)=>s+(r.amount||0),0); return {num:(done/10000).toFixed(1)+'억', label:'완료 매출'}; },
-        () => { const biz=JSON.parse(localStorage.getItem('korens_biz')||'[]'); const prog=biz.filter(r=>r.status==='진행중').reduce((s,r)=>s+(r.amount||0),0); return {num:(prog/10000).toFixed(1)+'억', label:'진행 중'}; }
+        () => { const tot=bizData.reduce((s,r)=>s+(r.amount||0),0); return {num:(tot/10000).toFixed(1)+'억', label:'누적 매출'}; },
+        () => { const done=bizData.filter(r=>r.status==='완료').reduce((s,r)=>s+(r.amount||0),0); return {num:(done/10000).toFixed(1)+'억', label:'완료 매출'}; },
+        () => { const prog=bizData.filter(r=>r.status==='진행중').reduce((s,r)=>s+(r.amount||0),0); const pct=Math.round(prog/BIZ_GOAL_MAN*100); return {num:pct+'%', label:'목표 진행률'}; }
     ],
     cost: [
-        () => { const d=(costData||[]).reduce((s,r)=>s+r.done,0); return {num:(d/100000000).toFixed(2)+'억', label:'현재 실적'}; },
+        () => { const d=(costData||[]).reduce((s,r)=>s+r.done,0); return {num:(d/100000000).toFixed(1)+'억', label:'현재 실적'}; },
         () => { const g=costAnnualGoal>0?costAnnualGoal:(costData||[]).reduce((s,r)=>s+r.goal,0); const d=(costData||[]).reduce((s,r)=>s+r.done,0); const p=g>0?Math.round(d/g*100):0; return {num:p+'%', label:'목표 달성률'}; },
         () => { const run=(costData||[]).filter(r=>r.status==='진행중').length; return {num:run+'건', label:'진행 중 과제'}; }
     ],
@@ -5373,115 +5632,6 @@ function rotateDashCards() {
     });
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// renderQualityKpiCards: Score 카드와 100% 동일 스타일
-// padding:14px 12px 12px, border-top:3px, flex-direction:column
-// 바 차트(월별 추이) SVG 포함 → Score와 동일 높이 자동 보장
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-function renderQualityKpiCards() {
-    const grid = document.getElementById('quality-kpi-grid');
-    if (!grid) return;
-
-    const inlines = cqData.inline || [];
-    const scores  = cqData.score  || [];
-    const now = new Date();
-    const thisM = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-
-    // ① 고객 품질 - 이번달 불량률 / 월별 추이
-    const tInl = inlines.filter(r => r['cq-month'] === thisM);
-    const srcInl = tInl.length ? tInl : inlines;
-    const cqPct = srcInl.length
-        ? srcInl.reduce((s,r)=>{const p=parseFloat(r['cq-prod'])||0,d=parseFloat(r['cq-def'])||0;return s+(p>0?d/p*100:0);},0)/srcInl.length
-        : null;
-    const cqVal = cqPct!==null ? cqPct.toFixed(2)+'%' : '-';
-    const cqGood = cqPct!==null && cqPct<=0.5;
-    const cqComment = cqGood ? '✅ 목표 달성' : '⚠️ 목표 초과';
-    // 월별 불량률 추이 (최근 6개월)
-    const cqMonthMap = {};
-    inlines.forEach(r=>{ const m=r['cq-month']||'',p=parseFloat(r['cq-prod'])||0,d=parseFloat(r['cq-def'])||0; if(m&&p>0){if(!cqMonthMap[m])cqMonthMap[m]={s:0,c:0};cqMonthMap[m].s+=d/p*100;cqMonthMap[m].c++;} });
-    const cqMonths = Object.keys(cqMonthMap).sort().slice(-6);
-    const cqHist = cqMonths.map(m=>({qtr:m,avgV:cqMonthMap[m].s/cqMonthMap[m].c}));
-    const cqTarget = 0.5;
-
-    // ② TEST 사업화 - 누적 매출 / 월별 추이
-    const bizTotal = bizData.reduce((s,r)=>s+(r.amount||0),0);
-    const bizGoal = 100000;
-    const bizPct = Math.round(bizTotal/bizGoal*100);
-    const bizVal = (bizTotal/10000).toFixed(1)+'억';
-    const bizGood = bizPct>=80;
-    const bizComment = bizGood ? '✅ 목표 달성' : '⚠️ 주의 필요';
-    const bizMonthMap = {};
-    bizData.forEach(r=>{ const m=(r.start||'').slice(0,7); if(m){if(!bizMonthMap[m])bizMonthMap[m]=0;bizMonthMap[m]+=(r.amount||0);} });
-    const bizMonths = Object.keys(bizMonthMap).sort().slice(-6);
-    const bizHist = bizMonths.map(m=>({qtr:m,avgV:bizMonthMap[m]/10000}));
-    const bizTarget = bizGoal/10000/12*6; // 반년 목표
-
-    // ③ 원가 절감 - 달성률 / 과제별 추이
-    const cGoal = costAnnualGoal>0?costAnnualGoal:costData.reduce((s,r)=>s+r.goal,0);
-    const cDone = costData.reduce((s,r)=>s+r.done,0);
-    const cPct  = cGoal>0?Math.round(cDone/cGoal*100):0;
-    const costVal = cPct+'%';
-    const costGood = cPct>=70;
-    const costComment = costGood ? '✅ 목표 달성' : '⚠️ 목표 미달';
-    const costHist = costData.slice(-6).map((r,i)=>({qtr:'과제'+(i+1),avgV:r.goal>0?Math.round(r.done/r.goal*100):0}));
-    const costTarget = 70;
-
-    // ④ AI 실험실 - 평균 진행률 / 과제별 추이
-    const labAvg = ailabData.length?Math.round(ailabData.reduce((s,r)=>s+r.pct,0)/ailabData.length):0;
-    const labVal = labAvg+'%';
-    const labGood = labAvg>=70;
-    const labComment = labGood ? '✅ 목표 달성' : '⚠️ 주의 필요';
-    const labHist = ailabData.slice(-6).map((r,i)=>({qtr:(r.name||'').slice(0,3),avgV:r.pct}));
-    const labTarget = 70;
-
-    // Score 카드와 완전히 동일한 SVG 바 차트 생성 함수
-    function makeSvg(hist, targetV, color, isLpkm) {
-        if (!hist.length) return '';
-        const barW=36, barGap=7, svgH=110, padL=4, padB=20, padT=32;
-        const dataMax = Math.max(...hist.map(h=>h.avgV), targetV*1.1, 1);
-        const svgW    = hist.length*(barW+barGap)+barGap+padL*2+28;
-        const chartH  = svgH-padB-padT;
-        const goalY   = padT+chartH-Math.round(targetV/dataMax*chartH);
-        const goalLine = '<line x1="'+padL+'" y1="'+goalY+'" x2="'+(svgW-30)+'" y2="'+goalY
-            +'" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3"/>'
-            +'<text x="'+(svgW-28)+'" y="'+(goalY+4)+'" font-size="8" fill="#94a3b8" font-weight="bold">'+targetV+'</text>';
-        const bars = hist.map((h,bi)=>{
-            const bh=Math.max(Math.round(h.avgV/dataMax*chartH),2);
-            const bx=padL+barGap+bi*(barW+barGap), by=padT+chartH-bh;
-            const bc=h.avgV>=targetV?color:'#ef4444';
-            const ql=(h.qtr||'').replace(/\d{4}-/,'').replace(/Q/,'Q');
-            const lbl=isLpkm?h.avgV.toFixed(1):Math.round(h.avgV).toString();
-            return '<rect x="'+bx+'" y="'+by+'" width="'+barW+'" height="'+bh+'" rx="4" fill="'+bc+'" opacity="0.9"/>'
-                  +'<text x="'+(bx+barW/2)+'" y="'+(by-5)+'" text-anchor="middle" font-size="10" fill="'+bc+'" font-weight="bold">'+lbl+'</text>'
-                  +'<text x="'+(bx+barW/2)+'" y="'+(svgH-5)+'" text-anchor="middle" font-size="8" fill="#94a3b8">'+ql+'</text>';
-        }).join('');
-        return '<svg width="'+svgW+'" height="'+svgH+'" viewBox="0 0 '+svgW+' '+svgH+'" style="display:block;width:100%;overflow:visible;">'+goalLine+bars+'</svg>';
-    }
-
-    const CARDS = [
-        { title:'고객 품질',        val:cqVal,   comment:cqComment,   color:'#f59e0b', hist:cqHist,   target:cqTarget,   lpkm:false, page:'cq',    id:'dc-cq'   },
-        { title:'TEST 사업화',      val:bizVal,  comment:bizComment,  color:'#8b5cf6', hist:bizHist,  target:bizTarget,  lpkm:true,  page:'biz',   id:'dc-sc'   },
-        { title:'원가 절감',         val:costVal, comment:costComment, color:'#10b981', hist:costHist, target:costTarget, lpkm:false, page:'cost',  id:'dc-cost' },
-        { title:'AI 스마트 실험실', val:labVal,  comment:labComment,  color:'#06b6d4', hist:labHist,  target:labTarget,  lpkm:false, page:'ailab', id:'dc-ailab'},
-    ];
-
-    // Score 카드와 완전히 동일한 HTML 구조
-    grid.innerHTML = CARDS.map(c => {
-        const numClr = c.comment.includes('달성') ? '#10b981' : c.color;
-        const svg = makeSvg(c.hist, c.target, c.color, c.lpkm);
-        return '<div class="dash-card" style="flex-direction:column;align-items:flex-start;padding:14px 12px 12px;box-sizing:border-box;'
-            + 'border-top:3px solid '+c.color+';gap:0;min-width:0;cursor:pointer;" onclick="showPage(\''+c.page+'\')">'
-            + '<div style="display:flex;justify-content:space-between;align-items:flex-start;width:100%;margin-bottom:6px;gap:4px;">'
-            +   '<div style="font-size:0.88rem;font-weight:700;color:var(--text);min-width:0;word-break:break-all;">'+c.title+'</div>'
-            +   '<div style="text-align:right;flex-shrink:0;max-width:52%;">'
-            +     '<div style="font-size:1rem;font-weight:700;color:'+numClr+';line-height:1.2;" id="'+c.id+'-num">'+c.val+'</div>'
-            +     '<div style="font-size:0.62rem;font-weight:700;color:'+numClr+';word-break:keep-all;line-height:1.3;margin-top:2px;" id="'+c.id+'-label">'+c.comment+'</div>'
-            +   '</div>'
-            + '</div>'
-            + svg
-            + '</div>';
-    }).join('');
-}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AI 활용도 페이지 탭 전환 & 차트 렌더
@@ -5596,55 +5746,51 @@ function I(id, label, type, value, isFull, options) {
     return '<div class="' + cls + '"><div class="df-label">' + label + '</div><div class="df-val" style="padding-top:4px;">' + inputHtml + '</div></div>';
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// renderQualityKpiCards: 홈 QUALITY 카드 데이터 연동
-// rotateDashCards가 dc-cq-num 등 id를 찾아 값 갱신
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// startDashRotation은 아래에서 호출됩니다
+
+// ── QUALITY 카드 값 업데이트
 function renderQualityKpiCards() {
-    // QUALITY 카드는 정적 HTML로 고정 (v9 기준)
-    // rotateDashCards()가 dc-cq-num, dc-sc-num, dc-cost-num, dc-ailab-num을
-    // 자동으로 갱신하므로 별도 렌더 불필요
-    // 단, 초기값 즉시 반영
+    // 고객 품질
     var inlines = cqData.inline || [];
     var now = new Date();
     var thisM = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
     var tInl = inlines.filter(function(r){ return r['cq-month'] === thisM; });
     var srcInl = tInl.length ? tInl : inlines;
     var cqPct = srcInl.length
-        ? (srcInl.reduce(function(s,r){ var p=parseFloat(r['cq-prod'])||0, d=parseFloat(r['cq-def'])||0; return s+(p>0?d/p*100:0); }, 0) / srcInl.length)
+        ? srcInl.reduce(function(s,r){ var p=parseFloat(r['cq-prod'])||0, d=parseFloat(r['cq-def'])||0; return s+(p>0?d/p*100:0); }, 0) / srcInl.length
         : null;
-    var cqEl = document.getElementById('dc-cq-num');
+    var unread = (cqData.mail||[]).filter(function(m){ return m['cq-mail-status']==='미처리'; }).length;
+    var cqEl  = document.getElementById('dc-cq-num');
     var cqLbl = document.getElementById('dc-cq-label');
-    if (cqEl) cqEl.textContent = cqPct !== null ? cqPct.toFixed(2)+'%' : '-';
-    if (cqLbl) {
-        var scoreAvg = (cqData.score||[]).length
-            ? ((cqData.score||[]).reduce(function(s,r){ var q=parseFloat(r['cq-s-quality'])||0,d=parseFloat(r['cq-s-delivery'])||0,rs=parseFloat(r['cq-s-response'])||0; return s+(q+d+rs)/3; },0)/(cqData.score||[]).length).toFixed(1)
-            : null;
-        cqLbl.textContent = scoreAvg ? '평균 만족도 ' + scoreAvg + '점' : '이번달 불량률';
-    }
+    if (cqEl)  cqEl.textContent  = unread > 0 ? unread+'건' : (cqPct !== null ? cqPct.toFixed(2)+'%' : '-');
+    if (cqLbl) cqLbl.textContent = unread > 0 ? '미처리 메일' : '이번달 불량률';
 
+    // TEST 사업화
     var bizTotal = bizData.reduce(function(s,r){ return s+(r.amount||0); }, 0);
-    var scEl = document.getElementById('dc-sc-num');
+    var bizPct2  = BIZ_GOAL_MAN > 0 ? Math.round(bizTotal/BIZ_GOAL_MAN*100) : 0;
+    var scEl  = document.getElementById('dc-sc-num');
     var scLbl = document.getElementById('dc-sc-label');
-    if (scEl) scEl.textContent = (bizTotal/10000).toFixed(1)+'억원';
-    if (scLbl) {
-        var bizPct = Math.round(bizTotal/100000*100);
-        scLbl.textContent = '목표 대비 ' + bizPct + '%';
-    }
+    if (scEl)  scEl.textContent  = (bizTotal/10000).toFixed(1)+'억';
+    if (scLbl) scLbl.textContent = '목표 대비 ' + bizPct2 + '%';
 
-    var cGoal = costAnnualGoal > 0 ? costAnnualGoal : costData.reduce(function(s,r){ return s+r.goal; }, 0);
-    var cDone = costData.reduce(function(s,r){ return s+r.done; }, 0);
-    var costEl = document.getElementById('dc-cost-num');
+    // 원가 절감
+    var cGoal = (typeof costAnnualGoal!=='undefined' && costAnnualGoal>0)
+        ? costAnnualGoal
+        : (costData||[]).reduce(function(s,r){ return s+r.goal; }, 0);
+    var cDone = (costData||[]).reduce(function(s,r){ return s+r.done; }, 0);
+    var cPct  = cGoal > 0 ? Math.round(cDone/cGoal*100) : 0;
+    var costEl  = document.getElementById('dc-cost-num');
     var costLbl = document.getElementById('dc-cost-label');
-    if (costEl) costEl.textContent = cGoal > 0 ? Math.round(cDone/cGoal*100)+'%' : '-';
-    if (costLbl) costLbl.textContent = (cDone/100000000).toFixed(2)+'억원 달성';
+    if (costEl)  costEl.textContent  = cDone >= 100000000 ? (cDone/100000000).toFixed(1)+'억' : (cDone/10000).toFixed(0)+'만';
+    if (costLbl) costLbl.textContent = '목표 대비 ' + cPct + '%';
 
-    var labRun = ailabData.filter(function(r){ return r.status==='진행중'; }).length;
+    // AI 실험실
+    var labRun = (ailabData||[]).filter(function(r){ return r.status==='진행중'; }).length;
     var labAvg = ailabData.length ? Math.round(ailabData.reduce(function(s,r){ return s+r.pct; },0)/ailabData.length) : 0;
-    var labEl = document.getElementById('dc-ailab-num');
+    var labEl  = document.getElementById('dc-ailab-num');
     var labLbl = document.getElementById('dc-ailab-label');
-    if (labEl) labEl.textContent = labRun+'건';
-    if (labLbl) labLbl.textContent = '평균 진행률 '+labAvg+'%';
+    if (labEl)  labEl.textContent  = labRun+'건';
+    if (labLbl) labLbl.textContent = '평균 진행률 ' + labAvg + '%';
 }
 
 
@@ -5772,22 +5918,18 @@ function applyVisionResult(type, json) {
         } else if (type === 'cost') {
             costData.push({name:item.name,dept:item.dept,goal:item.goal||0,done:item.done||0,date:item.date||'',status:item.status||'진행중'});
             localStorage.setItem('korens_cost', JSON.stringify(costData));
-            if (window._fbSet) window._fbSet('korens_cost', costData);
-            desc = `💰 <b>${item.name}</b> — 목표 ${(item.goal||0).toLocaleString()}원 / 실적 ${(item.done||0).toLocaleString()}원`;
+            desc = `💰 <b>${item.name}</b> — 목표 ${(item.goal||0).toLocaleString()}만원 / 실적 ${(item.done||0).toLocaleString()}만원`;
         } else if (type === 'ailab') {
             ailabData.push({name:item.name,owner:item.owner,pct:item.pct||0,start:item.start||'',end:item.end||'',status:item.status||'진행중',note:item.note||''});
             localStorage.setItem('korens_ailab', JSON.stringify(ailabData));
-            if (window._fbSet) window._fbSet('korens_ailab', ailabData);
             desc = `🧪 <b>${item.name}</b> — ${item.owner} / ${item.pct}%`;
         } else if (type === 'insp') {
             inspData.push({year:item.year,month:item.month,item:item.item,target:item.target||'',planDate:item.planDate||'',doneDate:item.doneDate||'',owner:item.owner||'',result:item.result||''});
             localStorage.setItem('korens_insp', JSON.stringify(inspData));
-            if (window._fbSet) window._fbSet('korens_insp', inspData);
             desc = `📅 <b>${item.year}년 ${item.month}월</b> — ${item.item}`;
         } else if (type === '4m') {
             data4m.push({type:item.type,content:item.content,date:item.date||'',dept:item.dept||'',approve:item.approve||'검토중',impact:item.impact||'보통',note:item.note||''});
             localStorage.setItem('korens_4m', JSON.stringify(data4m));
-            if (window._fbSet) window._fbSet('korens_4m', data4m);
             desc = `🔄 <b>${item.type}</b> — ${item.content}`;
         }
         preview += `<div style="padding:9px 14px;background:#f0fdf4;border-radius:8px;font-size:0.84rem;margin-top:6px;">${desc}</div>`;
@@ -6008,6 +6150,8 @@ function toggleDark() {
     const btn = document.getElementById('dark-toggle');
     btn.textContent = isDark ? '☀️ 라이트 모드' : '🌙 다크 모드';
     localStorage.setItem('korens_dark', isDark ? '1' : '0');
+    // SVG 색상이 JS로 인라인 생성되므로 다크모드 전환 시 재렌더
+    renderHomeScoreCards();
 }
 // 저장된 다크모드 복원
 (function() {
@@ -6029,9 +6173,8 @@ initYearSel(); initHistorySel();
 // 예시 데이터 삽입 (데이터 없을 때만)
 // ═══════════════════════════════════════════
 (function loadDemoData() {
-    // Firebase 설정 후에는 demo 데이터가 자동으로 덮어쓰지 않도록
-    // Firebase에서 로드된 데이터가 있으면 건너뜀
-    if (localStorage.getItem('korens_demo_loaded') === 'v27') return;
+    // 항상 데모 데이터 로드 (개발 모드)
+    // if (localStorage.getItem('korens_demo_loaded') === 'v24') return;
     // 구버전 캐시 선택적 클리어
     ['korens_tests','korens_breakdown','korens_completed','korens_pending',
      'korens_cq','korens_4m','korens_cost','korens_ailab','korens_insp','korens_biz','korens_demo_loaded'].forEach(k => localStorage.removeItem(k));
@@ -6090,24 +6233,26 @@ initYearSel(); initHistorySel();
 
     // ── 고객 만족도 ──
     cqData.score = [
-        // HKMC - 스타 등급 (2025년 3점, 2026년 집계중)
-        { 'cq-customer':'HKMC', 'cq-quarter':'2025-Q4', 'cq-s-quality':'3.0', 'cq-s-delivery':'3.0', 'cq-s-response':'3.0', 'cq-metric':'STAR', 'cq-target':'4.5' },
-        // BMW - LPKM (합격선 4.0, 2025년 4.8, 현재 4.6, 목표 4.5)
-        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q3', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.8', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q4', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.8', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        { 'cq-customer':'BMW', 'cq-quarter':'2026-Q1', 'cq-s-quality':'4.6', 'cq-s-delivery':'4.6', 'cq-s-response':'4.6', 'cq-metric':'LPKM', 'cq-target':'4.5' },
-        // FORD - Q1 (합격선 80, 2025년 94, 현재 94, 목표 90)
-        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q3', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90' },
-        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q4', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90' },
-        { 'cq-customer':'FORD', 'cq-quarter':'2026-Q1', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90' },
-        // Stellantis(FCA) - GEBSC (합격선 80, 현재 80, 목표 85)
-        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q3', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
-        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q4', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
-        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2026-Q1', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85' },
-        // JLR - Q1 Score (합격선 800, 2025년 1000, 현재 1000, 목표 1000)
-        { 'cq-customer':'JLR', 'cq-quarter':'2025-Q3', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000' },
-        { 'cq-customer':'JLR', 'cq-quarter':'2025-Q4', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000' },
-        { 'cq-customer':'JLR', 'cq-quarter':'2026-Q1', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000' }
+        // HKMC - 스타 등급 (4.5스타 이상 목표, 2025년 3점, 2026년 집계중)
+        { 'cq-customer':'HKMC', 'cq-quarter':'2025-Q2', 'cq-s-quality':'3.0', 'cq-s-delivery':'3.0', 'cq-s-response':'3.0', 'cq-metric':'STAR', 'cq-target':'4.5', 'cq-pass':'4' },
+        { 'cq-customer':'HKMC', 'cq-quarter':'2025-Q3', 'cq-s-quality':'3.0', 'cq-s-delivery':'3.0', 'cq-s-response':'3.0', 'cq-metric':'STAR', 'cq-target':'4.5', 'cq-pass':'4' },
+        { 'cq-customer':'HKMC', 'cq-quarter':'2025-Q4', 'cq-s-quality':'3.0', 'cq-s-delivery':'3.0', 'cq-s-response':'3.0', 'cq-metric':'STAR', 'cq-target':'4.5', 'cq-pass':'4' },
+        // BMW - LPKM (합격선 4점, 2025년 4.8, 현재 4.6, 목표 4.5이상)
+        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q3', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.8', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5', 'cq-pass':'4' },
+        { 'cq-customer':'BMW', 'cq-quarter':'2025-Q4', 'cq-s-quality':'4.8', 'cq-s-delivery':'4.8', 'cq-s-response':'4.8', 'cq-metric':'LPKM', 'cq-target':'4.5', 'cq-pass':'4' },
+        { 'cq-customer':'BMW', 'cq-quarter':'2026-Q1', 'cq-s-quality':'4.6', 'cq-s-delivery':'4.6', 'cq-s-response':'4.6', 'cq-metric':'LPKM', 'cq-target':'4.5', 'cq-pass':'4' },
+        // FORD - Q1 (합격선 80점, 2025년 94점, 현재 94점, 목표 90점이상)
+        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q3', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90', 'cq-pass':'80' },
+        { 'cq-customer':'FORD', 'cq-quarter':'2025-Q4', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90', 'cq-pass':'80' },
+        { 'cq-customer':'FORD', 'cq-quarter':'2026-Q1', 'cq-s-quality':'94', 'cq-s-delivery':'94', 'cq-s-response':'94', 'cq-metric':'Q1', 'cq-target':'90', 'cq-pass':'80' },
+        // Stellantis(FCA) - GEBSC (합격선 80점, 현재 80점, 목표 85점이상)
+        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q3', 'cq-s-quality':'79', 'cq-s-delivery':'79', 'cq-s-response':'79', 'cq-metric':'GEBSC', 'cq-target':'85', 'cq-pass':'80' },
+        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2025-Q4', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85', 'cq-pass':'80' },
+        { 'cq-customer':'Stellantis(FCA)', 'cq-quarter':'2026-Q1', 'cq-s-quality':'80', 'cq-s-delivery':'80', 'cq-s-response':'80', 'cq-metric':'GEBSC', 'cq-target':'85', 'cq-pass':'80' },
+        // JLR - Q1 Score (합격선 800점, 2025년 1000점, 현재 1000점, 목표 1000점이상)
+        { 'cq-customer':'JLR', 'cq-quarter':'2025-Q3', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000', 'cq-pass':'800' },
+        { 'cq-customer':'JLR', 'cq-quarter':'2025-Q4', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000', 'cq-pass':'800' },
+        { 'cq-customer':'JLR', 'cq-quarter':'2026-Q1', 'cq-s-quality':'1000', 'cq-s-delivery':'1000', 'cq-s-response':'1000', 'cq-metric':'Q1 Score', 'cq-target':'1000', 'cq-pass':'800' }
     ];
 
     // ── 필드 불량 메일 ──
@@ -6179,24 +6324,22 @@ initYearSel(); initHistorySel();
     ];
 
     // ── 원가 절감 ──
+// ── 원가 절감 (원 단위 데이터) ──
     costData = [
-        { name:'HMC/KMC 필드클레임 변제 금액',              dept:'품질팀', goal:48000000,   done:0,        date:'2026-12-31', status:'진행중' },
-        { name:'고객사 클레임 비용 협력사 상계처리',          dept:'품질팀', goal:130000000,  done:0,        date:'2026-12-31', status:'진행중' },
-        { name:'고객사 필드클레임 이의신청, 변제',            dept:'품질팀', goal:160000000,  done:0,        date:'2026-12-31', status:'진행중' },
-        { name:'해외법인(DV,PV), 고객, 협력사 유상 시험 비용', dept:'시험파트', goal:40000000, done:34512773, date:'2026-12-31', status:'진행중' },
-        { name:'26년 정기검사 Item 공급처 중복, A/S품 단일화', dept:'구매팀', goal:119000000,  done:0,        date:'2026-12-31', status:'진행중' },
-        { name:'수선유지비 절감 → 시험설비 유지보수 자체 수행', dept:'시험파트', goal:30000000, done:10000000, date:'2026-12-31', status:'진행중' },
-        { name:'기계연 외주 시험 평가 용역사 참여',           dept:'시험파트', goal:84000000,  done:0,        date:'2026-12-31', status:'진행중' },
-        { name:'추가 원가절감',                              dept:'전사',    goal:350000004,  done:0,        date:'2026-12-31', status:'진행중' }
+        { name: 'HMC/ KMC 필드클래임 변제 금액', dept: '품질본부', goal: 48000000, done: 0, date: '2026-12-31', status: '진행중' },
+        { name: '고객사 클래임 비용 협력사 상계처리', dept: '품질본부', goal: 130000000, done: 0, date: '2026-12-31', status: '진행중' },
+        { name: '고객사 필드클래임 이의신청, 변제', dept: '품질본부', goal: 160000000, done: 0, date: '2026-12-31', status: '진행중' },
+        { name: '해외법인(DV, PV), 고객, 협력사 유상 시험 비용', dept: '시험파트', goal: 40000000, done: 34512773, date: '2026-12-31', status: '진행중' },
+        { name: '26년 정기검사 Item 공급처 중복, A/S 품 단일화', dept: '품질본부', goal: 119000000, done: 0, date: '2026-12-31', status: '진행중' },
+        { name: '수선유지비 절감 → 시험설비 유지보수 자체 수행', dept: '시험파트', goal: 30000000, done: 10000000, date: '2026-12-31', status: '진행중' },
+        { name: '기계연 외주 시험 평가 용역사 참여', dept: '시험파트', goal: 84000000, done: 0, date: '2026-12-31', status: '진행중' },
+        { name: '추가 원가절감', dept: '품질본부', goal: 350000004, done: 0, date: '2026-12-31', status: '진행중' }
     ];
 
     // ── AI 스마트 실험실 ──
     ailabData = [
-        { name:'AI 비전 검사 시스템 구축',        owner:'홍길동', pct:85, start:'2026-01-10', end:'2026-05-31', status:'진행중', note:'카메라 모듈 설치 완료' },
-        { name:'시험 데이터 자동 수집 플랫폼',    owner:'홍길동', pct:100,start:'2024-09-01', end:'2026-02-28', status:'완료',   note:'전 시험장비 연동 완료' },
-        { name:'불량 예측 모델 개발',             owner:'홍길동', pct:40, start:'2026-03-01', end:'2026-08-31', status:'진행중', note:'데이터 학습 중' },
-        { name:'디지털 트윈 시험 환경 구축',      owner:'홍길동', pct:10, start:'2026-04-01', end:'2026-12-31', status:'진행중', note:'기획 단계' },
-        { name:'AI 리포트 자동 생성 시스템',      owner:'홍길동', pct:100,start:'2024-11-01', end:'2026-01-31', status:'완료',   note:'운영 중' }
+        { name:'시험 데이터 자동 수집 플랫폼',    owner:'홍길동', pct:27.4,start:'2026-01-01', end:'2026-12-31', status:'진행중',   note:'전 시험장비 연동 완료' },
+
     ];
 
     // ── 정기 검사 ──
@@ -6257,52 +6400,48 @@ initYearSel(); initHistorySel();
     );
     localStorage.setItem('korens_pending', JSON.stringify(pendingTests));
 
-    // ── TEST 사업화
-    bizData = [
-        { year:2026, customer:'현대모비스 MNAe',                    item:'NEa front PE 4M test (2항목)',                   amount:20742,  status:'계획',  owner:'Justin manager', start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대모비스 MNAe',                    item:'NEa rear PE 4M test (2항목)',                    amount:18408,  status:'계획',  owner:'Justin manager', start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대모비스 MNAe',                    item:'MVa front PE 4M test (2항목)',                   amount:19857,  status:'계획',  owner:'Justin manager', start:'2026-04-01', end:'' },
-        { year:2026, customer:'유니투스 충주제어기품질관리팀',       item:'RG3 FR/RR, SG2 PE단위 복합환경 평가',            amount:1438,   status:'계획',  owner:'손재철 책임',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'셰플러 신뢰성팀',                    item:'MV후륜 인버터기준 시험 8항목 평가',              amount:23323,  status:'계획',  owner:'김민제 연구',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대모비스 전기구동부품개발팀',       item:'CN7 HEV HSG 5항목(부품 업체 변경 검증)',         amount:4720,   status:'진행중',owner:'정지민 책임',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대자동차 구동선행컨셉개발팀',       item:'3IN1모터 고부하저자동차 내구 평가',              amount:5208,   status:'완료',  owner:'전동희 연구',    start:'2026-03-01', end:'2026-04-10' },
-        { year:2026, customer:'KCL 자동차환경평가센터',              item:'JG1 복합환경 검증',                              amount:643,    status:'완료',  owner:'염길택 선임',    start:'2026-03-01', end:'2026-04-10' },
-        { year:2026, customer:'보그워너 전동화시험평가팀',           item:'TAM PE시스템 정기신뢰성 평가',                   amount:25529,  status:'계획',  owner:'우혁무 팀장',    start:'2026-03-01', end:'' },
-        { year:2026, customer:'보그워너 전동화품질보증팀',           item:'SW PE시스템 정기신뢰성 평가(4항목)',             amount:4325,   status:'계획',  owner:'정형민 선임',    start:'2026-03-01', end:'' },
-        { year:2026, customer:'현대모비스 구동시스템성능개발팀',     item:'LT2 모터시스템 내구 2항목 평가',                 amount:10678,  status:'계획',  owner:'전준식 책임',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'RG3 FR 통합내구/고속작동내구 평가',              amount:9092,   status:'계획',  owner:'조경수 책임',    start:'2026-03-01', end:'' },
-        { year:2026, customer:'현대모비스 전동화시스템엔지니어링팀', item:'PE시스템 120kW 복합환경 평가',                   amount:4122,   status:'계획',  owner:'최지환 책임',    start:'2026-06-01', end:'' },
-        { year:2026, customer:'보그워너 전동화시험평가팀',           item:'TAM(AX) PE시스템 통합내구 추가분(153시간)',       amount:1583,   status:'계획',  owner:'우혁무 팀장',    start:'2026-03-01', end:'' },
-        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'NE N, RG3 통합내구/고속작동내구 평가',           amount:18125,  status:'계획',  owner:'조경수 책임',    start:'2026-03-01', end:'' },
-        { year:2026, customer:'유니투스 평택품질관리팀',             item:'SG2 PE단위 26년 정기신뢰성 복합환경 평가',       amount:1188,   status:'계획',  owner:'정진수 책임',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'인팩 이피엠 품질보증팀',              item:'NE후륜 신뢰성 평가(내구/환경)',                   amount:27525,  status:'계획',  owner:'박성호 팀장',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'3IN1 8항목 평가',                                amount:55911,  status:'계획',  owner:'조경수 책임',    start:'2026-04-01', end:'' },
-        { year:2026, customer:'현대모비스 전동화품질관리팀',         item:'2IN1 5항목 평가',                                amount:22570,  status:'계획',  owner:'조경수 책임',    start:'2026-04-01', end:'' }
-    ];
+    // ── TEST 사업화 더미
+   bizData = [
+    { year: 2026, customer: '현대모비스 MNAe', item: 'NEa front PE 4M test (2항목)', amount: 20742, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 MNAe', item: 'NEa rear PE 4M test (2항목)', amount: 18408, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 MNAe', item: 'MVa front PE 4M test (2항목)', amount: 19857, status: '계획', owner: 'Justin manager', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '유니투스 충주제어기품질관리팀', item: 'RG3 FR/RR, SG2 PE단위 복합환경 평가', amount: 1438, status: '계획', owner: '손재철 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '셰플러 신뢰성팀', item: 'MV후륜 인버터기준 시험 8항목 평가', amount: 23323, status: '계획', owner: '김민제 연구', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전기구동부품개발팀', item: 'CN7 HEV HSG 5항목(부품 업체 변경 검증)', amount: 4720, status: '진행중', owner: '정지민 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대자동차 구동선행컨셉개발팀', item: '3IN1모터 고부하저자동차 내구 평가', amount: 5208, status: '완료', owner: '전동희 연구', start: '2026-03-01', end: '2026-04-10' },
+    { year: 2026, customer: 'KCL 자동차환경평가센터', item: 'JG1 복합환경 검증', amount: 643, status: '완료', owner: '염길택 선임', start: '2026-03-01', end: '2026-04-10' },
+    { year: 2026, customer: '보그워너 전동화시험평가팀', item: 'TAM PE시스템 정기신뢰성 평가', amount: 25529, status: '계획', owner: '우혁무 팀장', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '보그워너 전동화품질보증팀', item: 'SW PE시스템 정기신뢰성 평가(4항목)', amount: 4325, status: '계획', owner: '정형민 선임', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '현대모비스 구동시스템성능개발팀', item: 'LT2 모터시스템 내구 2항목 평가', amount: 10678, status: '계획', owner: '전준식 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: 'RG3 FR 통합내구/고속작동내구 평가', amount: 9092, status: '계획', owner: '조경수 책임', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화시스템엔지니어링팀', item: 'PE시스템 120kW 복합환경 평가', amount: 4122, status: '계획', owner: '최지환 책임', start: '2026-06-01', end: '' },
+    { year: 2026, customer: '보그워너 전동화시험평가팀', item: 'TAM(AX) PE시스템 통합내구 추가분(153시간)', amount: 1583, status: '계획', owner: '우혁무 팀장', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: 'NE N, RG3 통합내구/고속작동내구 평가', amount: 18125, status: '계획', owner: '조경수 책임', start: '2026-03-01', end: '' },
+    { year: 2026, customer: '유니투스 평택품질관리팀', item: 'SG2 PE단위 26년 정기신뢰성 복합환경 평가', amount: 1188, status: '계획', owner: '정진수 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '인팩 이피엠 품질보증팀', item: 'NE후륜 신뢰성 평가(내구/환경)', amount: 27525, status: '계획', owner: '박성호 팀장', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: '3IN1 8항목 평가', amount: 55911, status: '계획', owner: '조경수 책임', start: '2026-04-01', end: '' },
+    { year: 2026, customer: '현대모비스 전동화품질관리팀', item: '2IN1 5항목 평가', amount: 22570, status: '계획', owner: '조경수 책임', start: '2026-04-01', end: '' }
+];
     localStorage.setItem('korens_biz', JSON.stringify(bizData));
-    if (window._fbSet) window._fbSet('korens_biz', bizData);
 
-    localStorage.setItem('korens_demo_loaded', 'v27');
+    localStorage.setItem('korens_demo_loaded', 'v28');
     save();
     saveAll();
 })();
 
-// ═══════════════════════════════════════════
 // Firebase 실시간 동기화 — 전역 변수 재초기화
-// (다른 사용자가 저장하면 이 함수가 호출됨)
-// ═══════════════════════════════════════════
 window._fbReloadAll = function() {
-    tests      = JSON.parse(localStorage.getItem('korens_tests')     || '{}');
-    breakdown  = JSON.parse(localStorage.getItem('korens_breakdown') || '{}');
-    completed  = JSON.parse(localStorage.getItem('korens_completed') || '[]');
-    cqData     = JSON.parse(localStorage.getItem('korens_cq')        || '{}');
-    data4m     = JSON.parse(localStorage.getItem('korens_4m')        || '[]');
-    costData   = JSON.parse(localStorage.getItem('korens_cost')      || '[]');
-    ailabData  = JSON.parse(localStorage.getItem('korens_ailab')     || '[]');
-    inspData   = JSON.parse(localStorage.getItem('korens_insp')      || '[]');
-    pendingTests = JSON.parse(localStorage.getItem('korens_pending') || '[]');
-    bizData    = JSON.parse(localStorage.getItem('korens_biz')       || '[]');
-    deviceFaults = JSON.parse(localStorage.getItem('korens_faults')  || '{}');
+    tests        = JSON.parse(localStorage.getItem('korens_tests')     || '{}');
+    breakdown    = JSON.parse(localStorage.getItem('korens_breakdown') || '{}');
+    completed    = JSON.parse(localStorage.getItem('korens_completed') || '[]');
+    cqData       = JSON.parse(localStorage.getItem('korens_cq')        || '{}');
+    data4m       = JSON.parse(localStorage.getItem('korens_4m')        || '[]');
+    costData     = JSON.parse(localStorage.getItem('korens_cost')      || '[]');
+    ailabData    = JSON.parse(localStorage.getItem('korens_ailab')     || '[]');
+    inspData     = JSON.parse(localStorage.getItem('korens_insp')      || '[]');
+    pendingTests = JSON.parse(localStorage.getItem('korens_pending')   || '[]');
+    bizData      = JSON.parse(localStorage.getItem('korens_biz')       || '[]');
+    deviceFaults = JSON.parse(localStorage.getItem('korens_faults')    || '{}');
     renderAll();
 };
 
@@ -6311,5 +6450,6 @@ switchCqTab('inline');
 fetchWeather();
 setInterval(fetchWeather, 600000); // 10분마다 갱신
 </script>
+</div><!-- /app-screen -->
 </body>
 </html>
